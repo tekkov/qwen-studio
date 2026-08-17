@@ -9,7 +9,9 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # The product and its integration tests are Windows-first: PowerShell is
+    # part of the supported local toolchain, so verify on the real target OS.
+    runs-on: windows-latest
     steps:
       - name: Check out the code 📦
         uses: actions/checkout@v4
