@@ -52,6 +52,14 @@ class PersistentStorageTests(unittest.TestCase):
         self.assertGreater(omitted, 0)
         self.assertEqual(selected[-1], messages[-1])
 
+    def test_context_trimming_never_drops_system_instructions(self):
+        system = {"role": "system", "content": "Always use tools and verify work."}
+        messages = [system] + [{"role": "user", "content": str(index) * 2000} for index in range(20)]
+        selected, omitted = server.trim_messages(messages, 2048)
+        self.assertGreater(omitted, 0)
+        self.assertIs(selected[0], system)
+        self.assertEqual(selected[-1], messages[-1])
+
 
 if __name__ == "__main__":
     unittest.main()

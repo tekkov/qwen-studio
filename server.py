@@ -173,13 +173,17 @@ def model_messages(messages):
 
 def trim_messages(messages, context_limit):
     """Keep the newest complete turns inside a conservative local context budget."""
-    character_budget = int(context_limit * 2.8)
+    system = messages[0] if messages and messages[0].get("role") == "system" else None
+    candidates = messages[1:] if system else messages
+    system_cost = len(str(system.get("content", ""))) if system else 0
+    character_budget = max(1000, int(context_limit * 2.8) - system_cost)
     selected, used = [], 0
-    for message in reversed(messages):
+    for message in reversed(candidates):
         cost = len(str(message.get("content", ""))) + (4500 * len(message.get("images", [])))
         if selected and used + cost > character_budget: break
         selected.append(message); used += cost
     selected.reverse()
+    if system: selected.insert(0, system)
     return selected, max(0, len(messages) - len(selected))
 
 def load_attachment_state():
@@ -340,7 +344,7 @@ def stream_ollama_chat(payload, job):
     started = time.time()
     chunks = 0
     first_chunk_at = None
-    with urlopen(request, timeout=1800) as response:
+    with urlopen(request) as response:
         with JOBS_LOCK: job["_response"] = response
         for raw_line in response:
             if job.get("cancelRequested"):
@@ -357,8 +361,6 @@ def stream_ollama_chat(payload, job):
             if part.get("tool_calls"):
                 message["tool_calls"].extend(part["tool_calls"])
             chunks += 1
-            try: response.fp.raw._sock.settimeout(45)
-            except Exception: pass
             stage = "Qwen is writing its response." if message["content"] else "Qwen is analyzing the request and deciding what to do."
             update_job_activity(job, "generating", stage, streamChunks=chunks, generatedCharacters=len(message["content"]), thinkingCharacters=len(message["thinking"]), elapsedSeconds=round(time.time() - started, 1), lastChunkAt=time.time())
             if chunk.get("done"):
@@ -506,16 +508,20 @@ def run_agent_job(job_id, incoming):
         workspace_prompt = f"\n\nThe active project folder is: {workspace}. Resolve relative file paths and PowerShell work inside this folder."
         conversation = [{"role": "system", "content": SYSTEM + workspace_prompt}] + messages
         profile = PROFILES.get(mode, PROFILES["fast"])
-        options = {"temperature": profile["temperature"], "num_ctx": profile["num_ctx"]}
+        options = {"temperature": profile["temperature"], "num_ctx": profile["num_ctx"], "num_predict": -1}
         think = profile["think"]
-        conversation, omitted = trim_messages(conversation, profile["num_ctx"])
-        if omitted:
-            add_job_event(job, "context", f"Kept the newest conversation turns and omitted {omitted} older message{'s' if omitted != 1 else ''} to keep Qwen responsive.", {"Profile": profile["label"], "Context limit": f"{profile['num_ctx']:,} tokens", "Older messages omitted": omitted})
-        for step in range(12):
+        reported_omitted = 0
+        step = 0
+        while True:
+            request_conversation, omitted = trim_messages(conversation, profile["num_ctx"])
+            if omitted > reported_omitted:
+                add_job_event(job, "context", f"Kept the newest conversation turns and omitted {omitted} older message{'s' if omitted != 1 else ''} to keep Qwen responsive.", {"Profile": profile["label"], "Context limit": f"{profile['num_ctx']:,} tokens", "Older messages omitted": omitted})
+                reported_omitted = omitted
             add_job_event(job, "reasoning", "Sending the conversation and available tools to Qwen through Ollama. Waiting for Qwen to choose the next action.", {"Component": f"Ollama → {MODEL}", "Agent step": step + 1, "Mode": f"{profile['label']} — thinking {'enabled' if think else 'disabled'}", "Context limit": f"{profile['num_ctx']:,} tokens"})
-            update_job_activity(job, "model", "Ollama is loading the conversation into Qwen. The first response can take longer for a 27B model.", agentStep=step + 1)
-            payload = {"model": MODEL, "messages": conversation, "tools": BUILT_IN_TOOLS + mcp_tools, "options": options, "think": think, "keep_alive": "30m"}
+            update_job_activity(job, "model", "Ollama is loading the conversation into Qwen. This run has no automatic time limit.", agentStep=step + 1, unlimitedRun=True)
+            payload = {"model": MODEL, "messages": request_conversation, "tools": BUILT_IN_TOOLS + mcp_tools, "options": options, "think": think, "keep_alive": "30m"}
             message, result = stream_ollama_chat(payload, job)
+            step += 1
             calls = message.get("tool_calls", [])
             if not calls:
                 if requires_artifacts and not job.get("artifacts"):
@@ -551,15 +557,9 @@ def run_agent_job(job_id, incoming):
                         job["metrics"]["artifactsCreated"] = len(job["artifacts"])
                 result_text, result_detail = describe_tool_result(name, args, output, ok)
                 add_job_event(job, "tool_complete" if ok else "tool_error", result_text, result_detail)
-        raise RuntimeError("Qwen used the maximum number of tool steps without finishing.")
     except (HTTPError, URLError) as error:
         with JOBS_LOCK: job["status"] = "error"; job["error"] = f"Could not reach Ollama: {getattr(error, 'reason', error)}"; job["finishedAt"] = time.time()
         add_job_event(job, "error", job["error"])
-    except socket.timeout:
-        stopped = bool(job.get("cancelRequested"))
-        message = "Stopped by user." if stopped else "Qwen stopped producing output for 45 seconds. The model run was ended instead of being left hanging. Try Fast mode or a smaller context."
-        with JOBS_LOCK: job["status"] = "stopped" if stopped else "error"; job["error"] = message; job["finishedAt"] = time.time()
-        add_job_event(job, "stopped" if stopped else "error", message)
     except Exception as error:
         stopped = bool(job.get("cancelRequested"))
         with JOBS_LOCK:

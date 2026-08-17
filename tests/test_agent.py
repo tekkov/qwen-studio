@@ -39,6 +39,7 @@ class AgentCompletionGuardTests(unittest.TestCase):
 
     def test_plain_question_can_complete_without_writing_files(self):
         with tempfile.TemporaryDirectory() as folder:
+            payloads = []
             job_id = "chat-test"
             server.JOBS[job_id] = {
                 "id": job_id, "status": "running", "phase": "queued", "activity": "Starting", "events": [],
@@ -49,11 +50,13 @@ class AgentCompletionGuardTests(unittest.TestCase):
             with patch.object(server, "project_workspace", return_value=Path(folder)), \
                  patch.object(server, "active_project", return_value=None), \
                  patch.object(server, "connected_mcp_tools", return_value=([], {})), \
-                 patch.object(server, "stream_ollama_chat", return_value=({"role": "assistant", "content": "A closure captures scope."}, {"eval_count": 5, "eval_duration": 1_000_000_000})):
+                 patch.object(server, "stream_ollama_chat", side_effect=lambda payload, job: (payloads.append(payload) or ({"role": "assistant", "content": "A closure captures scope."}, {"eval_count": 5, "eval_duration": 1_000_000_000}))):
                 server.run_agent_job(job_id, incoming)
 
             self.assertEqual(server.JOBS[job_id]["status"], "complete")
             self.assertEqual(server.JOBS[job_id]["artifacts"], [])
+            self.assertEqual(payloads[0]["options"]["num_predict"], -1)
+            self.assertTrue(server.JOBS[job_id]["metrics"]["unlimitedRun"])
 
 
 if __name__ == "__main__":

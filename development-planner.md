@@ -58,11 +58,12 @@
 # Completed Action Items
 
 ## Session 2026-08-16 (persistent product foundation and release hardening)
+- Removed automatic model and agent-step limits, enabled unlimited Ollama output, added per-step context trimming with preserved system instructions, and made slow-processing UI states truthful.
 - Added project creation, persistent project-scoped chats, rename/archive controls, model mode persistence, and native thread navigation.
 - Added image, code/text, and video attachment intake with previews, bounded extraction, FFmpeg frame sampling, local storage, and Ollama vision payloads.
 - Added Fast/Balanced/Deep profiles, Ollama capability detection, practical context trimming, first-token timing, prompt processing speed, and generation TPS evidence.
 - Replaced the shared fixed backend port with a fresh per-launch port so new UI builds cannot attach to stale packaged servers.
-- Added seven passing automated tests, a passing real vision test at 4.03 TPS, and a passing real coding-agent file-write/read smoke test.
+- Added eight passing automated tests, a passing real vision test at 4.03 TPS, and passing real coding-agent file-write/read smoke tests.
 - Added MIT licensing, Windows CI, contributor/security guidance, focused documentation, and secret/generated-file ignore rules.
 
 ## Session 2026-08-16 (runtime foundation and initial audit)

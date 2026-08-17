@@ -270,9 +270,9 @@ function updateRunActivity(card, job) {
   const metrics = job.metrics || {};
   const generated = metrics.generatedCharacters ? ` · ${Number(metrics.generatedCharacters).toLocaleString()} characters generated` : '';
   const staleSeconds = Math.max(0, Math.floor(Date.now() / 1000 - (job.updatedAt || Date.now() / 1000)));
-  if (job.phase === 'generating' && staleSeconds >= 10) {
-    live.querySelector('strong').textContent = 'Waiting for more model output';
-    live.querySelector('small').textContent = `Qwen has produced no new output for ${staleSeconds} seconds. The app will stop the run if this reaches 45 seconds.${generated}`;
+  if (['model', 'generating'].includes(job.phase) && staleSeconds >= 10) {
+    live.querySelector('strong').textContent = job.phase === 'model' ? 'Ollama is processing the conversation' : 'Waiting for more model output';
+    live.querySelector('small').textContent = `Ollama is still processing this agent step. No new token for ${staleSeconds}s · this run has no automatic time limit. Use Stop only if you want to end it.${generated}`;
   } else {
     live.querySelector('small').textContent = `${job.activity || 'Waiting for the next update…'}${generated}`;
   }
@@ -363,6 +363,7 @@ async function sendMessage(text) {
   addMessage('user', outgoingText, outgoingAttachments);
   $('#send').disabled = true;
   $('#send').textContent = 'Working';
+  $('#mode').disabled = true;
   const runCard = addRunStatus();
   try {
     const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: state.threadId, message: outgoingText, attachments: outgoingAttachments.map(item => item.id), mode: state.mode }) });
@@ -380,7 +381,7 @@ async function sendMessage(text) {
     live.querySelector('small').textContent = error.message;
     addMessage('assistant', `Error: ${error.message}`);
   }
-  finally { state.running = false; $('#send').disabled = false; $('#send').textContent = 'Send'; prompt.focus(); }
+  finally { state.running = false; $('#send').disabled = false; $('#send').textContent = 'Send'; $('#mode').disabled = false; prompt.focus(); }
 }
 
 function argsToLines(args = []) { return args.join('\n'); }

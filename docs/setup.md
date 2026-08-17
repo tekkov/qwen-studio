@@ -21,7 +21,7 @@ For source development, place these values in a repository `.env`. A packaged ap
 ## Common failures
 
 - **Local runtime offline:** start Ollama, then restart Qwen Studio. Confirm `ollama list` contains the configured model.
-- **First response is slow:** a 27B Q4 model exceeds 8 GB VRAM and uses both CPU and GPU on this hardware. Keep Fast mode selected and leave the model warm.
+- **First response is slow:** a 27B Q4 model exceeds 8 GB VRAM and uses both CPU and GPU on this hardware. Keep Fast mode selected and leave the model warm. Qwen Studio does not automatically time out model work; use Stop if you intentionally want to end a run.
 - **Video failed:** install FFmpeg and confirm both `ffmpeg` and `ffprobe` are on `PATH`.
 - **MCP failed:** use Test in the MCP view. Confirm the command works in PowerShell and required tokens are present in its environment JSON.
 - **Build has old behavior:** rebuild with `npm run dist` and launch the new executable. The dynamic backend port prevents cross-version backend reuse.

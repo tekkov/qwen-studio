@@ -21,4 +21,4 @@ Metadata is currently versioned JSON under `%APPDATA%\QwenLocalAgent`; attachmen
 
 The server sends the system instructions, trimmed conversation, built-in tools, and connected MCP tools to `/api/chat`. Qwen may request up to 12 tool steps. Build requests cannot complete until a real artifact has been observed. Tool results are returned to the model and translated into plain-language run events for the UI.
 
-Fast uses 8,192 tokens without thinking, Balanced uses 16,384 without thinking, and Deep uses 32,768 with thinking. Older messages are trimmed from model input when needed but remain in persistent chat history.
+Fast uses 8,192 tokens without thinking, Balanced uses 16,384 without thinking, and Deep uses 32,768 with thinking. Output generation and agent tool steps are uncapped, and model requests have no automatic time limit. A run continues until Qwen finishes, the user presses Stop, or the local runtime returns an actual error. Older messages are re-trimmed before every agent step when needed but remain in persistent chat history; system instructions are always retained.

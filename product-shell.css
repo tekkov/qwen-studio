@@ -46,6 +46,7 @@
 .attachment-error { flex-basis: 100%; border-radius: 6px; padding: 7px 9px; background: #fff0f0; color: #a32626; font-size: 10px; }
 .composer.dragging { border-color: var(--q-accent); box-shadow: 0 0 0 3px rgba(36, 87, 230, .1); }
 .project-head-actions { display: flex; gap: 8px; }
+.model-select button:disabled { cursor: not-allowed; opacity: .55; }
 .message-prose { white-space: pre-wrap; }
 .code-block { margin: 13px 0; overflow: hidden; border: 1px solid #dedee1; border-radius: 9px; background: #f7f7f8; }
 .code-block header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e3e3e6; padding: 6px 9px; color: #707078; font-size: 10px; text-transform: lowercase; }
