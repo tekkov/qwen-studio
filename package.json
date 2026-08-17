@@ -1,0 +1,31 @@
+{
+  "name": "qwen-local-agent",
+  "version": "0.2.0",
+  "description": "A free, local-first Qwen coding agent desktop app powered by Ollama",
+  "author": "Qwen Studio contributors",
+  "license": "MIT",
+  "keywords": ["qwen", "ollama", "coding-agent", "mcp", "electron"],
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "python -m unittest discover -s tests -v",
+    "check": "python -m py_compile server.py && node --check app.js && node --check main.js && node --check preload.js && node --check icons.js && npm test",
+    "smoke:model": "python scripts/smoke_model.py",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^36.3.2",
+    "electron-builder": "^26.0.12"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0"
+  },
+  "build": {
+    "appId": "local.qwen.studio",
+    "productName": "Qwen Studio",
+    "asar": true,
+    "asarUnpack": ["server.py", "mcp-bridge.mjs", "index.html", "*.css", "icons.js", "app.js", "qwen-studio-icon.png"],
+    "files": ["main.js", "preload.js", "server.py", "mcp-bridge.mjs", "index.html", "style.css", "run-status.css", "projects.css", "terminal.css", "product-shell.css", "icons.js", "app.js", "qwen-studio-icon.png", "qwen-studio-icon.ico", "README.md", "LICENSE", "SECURITY.md", "docs/**/*", ".env.example"],
+    "win": { "target": ["portable"], "icon": "qwen-studio-icon.ico" }
+  }
+}

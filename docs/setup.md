@@ -1,0 +1,27 @@
+# Setup and troubleshooting
+
+## Local setup
+
+Install Python, Node.js, Ollama, and FFmpeg, then verify them with `python --version`, `node --version`, `ollama --version`, and `ffmpeg -version`. Pull the default model with `ollama pull qwen3.8:27b`, run `npm install`, and launch with `npm start`.
+
+The desktop process chooses an unused local port on every launch. This prevents a new UI from accidentally connecting to an older packaged backend, which was the primary cause of repeated stale “Failed to fetch” states.
+
+## Configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `QWEN_MODEL` | `qwen3.8:27b` | Ollama model name. Tool and vision capabilities are recommended. |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama API base URL. |
+| `QWEN_DATA_DIR` | `%APPDATA%\QwenLocalAgent` | Persistent chats, projects, attachments, and MCP configuration. |
+| `QWEN_PORT` | `8000` for manual server use | Backend loopback port. Desktop mode chooses a free port automatically. |
+| `QWEN_PYTHON` | Windows `py -3` launcher | Optional absolute Python executable when the launcher is unavailable. |
+
+For source development, place these values in a repository `.env`. A packaged app also reads `%APPDATA%\Qwen Studio\.env`. Existing process environment variables take precedence.
+
+## Common failures
+
+- **Local runtime offline:** start Ollama, then restart Qwen Studio. Confirm `ollama list` contains the configured model.
+- **First response is slow:** a 27B Q4 model exceeds 8 GB VRAM and uses both CPU and GPU on this hardware. Keep Fast mode selected and leave the model warm.
+- **Video failed:** install FFmpeg and confirm both `ffmpeg` and `ffprobe` are on `PATH`.
+- **MCP failed:** use Test in the MCP view. Confirm the command works in PowerShell and required tokens are present in its environment JSON.
+- **Build has old behavior:** rebuild with `npm run dist` and launch the new executable. The dynamic backend port prevents cross-version backend reuse.

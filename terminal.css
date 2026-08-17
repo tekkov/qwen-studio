@@ -1,0 +1,25 @@
+.topbar-actions { display: flex; align-items: center; gap: 10px; }
+.terminal-toggle { display: flex; align-items: center; gap: 7px; height: 31px; padding: 0 10px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: #65656b; font-size: 11px; }
+.terminal-toggle:hover, .terminal-toggle[aria-expanded="true"] { border-color: #e1e1e3; background: #f7f7f8; color: #202123; }
+.terminal-toggle svg, .terminal-head svg { width: 15px; height: 15px; }
+.surface.terminal-open .view.active { min-height: 260px; }
+.terminal-panel { flex: 0 0 290px; min-height: 190px; border-top: 1px solid #d7d7da; background: #111214; color: #e8e8e8; box-shadow: 0 -8px 24px rgba(0, 0, 0, .08); }
+.terminal-panel[hidden] { display: none; }
+.terminal-head { display: flex; align-items: center; justify-content: space-between; height: 39px; padding: 0 12px 0 15px; border-bottom: 1px solid #292b2f; background: #18191c; }
+.terminal-head > div { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.terminal-head strong { font-size: 11px; font-weight: 600; }
+.terminal-head code { max-width: min(48vw, 560px); overflow: hidden; color: #8b8e95; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-head button { height: 25px; border: 0; border-radius: 5px; background: transparent; color: #a9abb1; font-size: 10px; }
+.terminal-head button:hover { background: #292b2f; color: #fff; }
+.terminal-head #terminal-stop { color: #ff8a85; }
+.terminal-status { color: #7f8289; font-size: 10px; }
+.terminal-status.running { color: #7dd3fc; }
+.terminal-close { display: grid; width: 27px; place-items: center; }
+.terminal-output { height: calc(100% - 78px); margin: 0; overflow: auto; padding: 12px 15px; color: #d7d9dd; font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; font-size: 11px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.terminal-welcome { color: #7f8289; }
+.terminal-form { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; height: 39px; border-top: 1px solid #292b2f; padding: 0 9px 0 15px; background: #16171a; }
+.terminal-form > span { color: #66d9a3; font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; }
+.terminal-form input { min-width: 0; border: 0; outline: 0; background: transparent; color: #f2f2f3; font-family: "Cascadia Code", Consolas, monospace; font-size: 11px; }
+.terminal-form button { border: 0; border-radius: 5px; background: #2b2d31; color: #d7d9dd; padding: 5px 10px; font-size: 10px; }
+.terminal-form button:disabled, .terminal-form input:disabled { opacity: .45; }
+@media (max-width: 950px) { .terminal-toggle span:not([data-icon]) { display: none; } .terminal-panel { flex-basis: 250px; } }
