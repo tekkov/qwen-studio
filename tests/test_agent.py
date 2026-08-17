@@ -58,6 +58,37 @@ class AgentCompletionGuardTests(unittest.TestCase):
             self.assertEqual(payloads[0]["options"]["num_predict"], -1)
             self.assertTrue(server.JOBS[job_id]["metrics"]["unlimitedRun"])
 
+    def test_empty_response_is_rejected_and_retried(self):
+        with tempfile.TemporaryDirectory() as folder:
+            responses = iter([
+                ({"role": "assistant"}, {}),
+                ({"role": "assistant", "content": "The project work is complete and verified."}, {"eval_count": 8, "eval_duration": 1_000_000_000}),
+            ])
+            job_id = "empty-response-test"
+            server.JOBS[job_id] = {
+                "id": job_id, "status": "running", "phase": "queued", "activity": "Starting", "events": [],
+                "message": None, "error": None, "createdAt": 0, "updatedAt": 0, "finishedAt": None,
+                "metrics": {}, "artifacts": [], "requiresArtifacts": False, "cancelRequested": False, "_response": None,
+            }
+            incoming = {"messages": [{"role": "user", "content": "Explain this project"}], "mode": "fast"}
+            with patch.object(server, "project_workspace", return_value=Path(folder)), \
+                 patch.object(server, "active_project", return_value=None), \
+                 patch.object(server, "connected_mcp_tools", return_value=([], {})), \
+                 patch.object(server, "stream_ollama_chat", side_effect=lambda payload, job: next(responses)):
+                server.run_agent_job(job_id, incoming)
+
+            self.assertEqual(server.JOBS[job_id]["status"], "complete")
+            self.assertTrue(any(event["kind"] == "guardrail" and "no visible answer" in event["text"] for event in server.JOBS[job_id]["events"]))
+
+    def test_agent_powershell_reports_process_and_live_output(self):
+        with tempfile.TemporaryDirectory() as folder:
+            job = {"events": [], "metrics": {}, "updatedAt": 0, "cancelRequested": False}
+            output = server.run_command_streamed("Write-Output 'live progress'", Path(folder), job)
+            self.assertIn("exit_code=0", output)
+            self.assertIn("live progress", output)
+            self.assertTrue(any(event["kind"] == "process" for event in job["events"]))
+            self.assertTrue(any(event["kind"] == "process_output" and "live progress" in event["text"] for event in job["events"]))
+
 
 if __name__ == "__main__":
     unittest.main()

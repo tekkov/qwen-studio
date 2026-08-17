@@ -1,0 +1,13 @@
+.project-card { display: block; }
+.project-card-head { display: flex; align-items: center; gap: 12px; }
+.project-card-chats { display: grid; gap: 3px; margin: 12px 0 0 46px; border-top: 1px solid #ededf0; padding-top: 9px; }
+.project-card-chats-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 2px; color: #77777d; font-size: 9px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.project-card-chats-head button { border: 0; border-radius: 5px; padding: 4px 6px; background: transparent; color: #3153a4; font-size: 9px; letter-spacing: 0; text-transform: none; }
+.project-card-chats-head button:hover, .project-card-chats-head button:focus-visible { background: #eef2ff; }
+.project-card-chats > p { margin: 4px 0; color: #99999f; font-size: 10px; }
+.project-card-chat { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-width: 0; border: 0; border-radius: 5px; padding: 6px 7px; background: transparent; color: #55555b; text-align: left; }
+.project-card-chat:hover, .project-card-chat:focus-visible, .project-card-chat.active { background: #f0f1f5; color: #202124; }
+.project-card-chat span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.project-card-chat small { flex: 0 0 auto; color: #99999f; font-size: 9px; }
+
+@media (max-width: 900px) { .project-card-chats { margin-left: 0; } }

@@ -23,7 +23,7 @@ The largest gaps are architectural rather than cosmetic: conversations exist onl
 | Thinking | Reported by Ollama | Fast off / Deep on | Add Balanced mode and explicit budgets. |
 | Vision | Reported by Ollama with CLIP projector | No | Add image attachments through Ollama `images`. |
 | Video | No direct Ollama chat transport | No | Sample frames with local FFmpeg and send bounded image sequences. |
-| Native context | 262,144 tokens | Hard-coded 8,192 / 32,768 | Detect capability; use practical adaptive bounds. |
+| Native context | 262,144 tokens | Detected; 32K / 64K / 128K profiles | Keep adaptive bounds visible and user-selectable. |
 | MCP | stdio only | Partial | Add health, enablement, approvals, HTTP, and auth. |
 
 ## Performance findings

@@ -8,13 +8,26 @@
 
 .topbar-context { display: flex; align-items: center; min-width: 0; gap: 10px; }
 .active-project-name { max-width: 260px; overflow: hidden; border-left: 1px solid var(--q-line); padding-left: 10px; color: var(--q-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.thread-nav { min-height: 0; margin-top: 22px; border-top: 1px solid #e3e3e5; padding-top: 14px; }
+.thread-nav { display: flex; flex: 1; min-height: 0; flex-direction: column; margin-top: 22px; border-top: 1px solid #e3e3e5; padding-top: 14px; }
 .thread-nav-head { display: flex; align-items: center; justify-content: space-between; padding: 0 7px 8px 9px; color: #8a8a90; font-size: 9px; font-weight: 600; letter-spacing: .1em; }
 .thread-nav-head button { display: grid; width: 25px; height: 25px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: #777; }
 .thread-nav-head button:hover { background: #e9e9eb; color: #202123; }
 .thread-nav-head svg { width: 13px; height: 13px; }
-.thread-list { display: grid; max-height: min(38vh, 340px); gap: 2px; overflow: auto; padding-right: 2px; }
+.thread-list { display: grid; min-height: 0; gap: 2px; overflow: auto; padding-right: 2px; }
 .thread-list > p { margin: 5px 9px; color: #96969c; font-size: 10px; line-height: 1.45; }
+.project-thread-group { display: grid; gap: 2px; padding: 2px 0 7px; }
+.project-thread-group + .project-thread-group { border-top: 1px solid #e8e8ea; padding-top: 7px; }
+.project-thread-head { display: flex; align-items: center; min-width: 0; }
+.project-tree-button { display: grid; flex: 1; min-width: 0; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 7px; border: 0; border-radius: 6px; padding: 6px 7px; background: transparent; color: #55555b; text-align: left; }
+.project-tree-button:hover, .project-thread-group.active .project-tree-button { background: #e9e9eb; color: #202124; }
+.project-tree-button svg { width: 14px; height: 14px; }
+.project-tree-button > span:nth-child(2) { overflow: hidden; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.project-tree-button small { min-width: 17px; border-radius: 9px; padding: 1px 5px; background: #dddde0; color: #717177; font-size: 9px; text-align: center; }
+.project-chat-add { display: grid; width: 25px; height: 25px; place-items: center; border: 0; border-radius: 5px; background: transparent; color: #77777d; }
+.project-chat-add:hover { background: #e5e5e7; color: #202124; }
+.project-chat-add svg { width: 12px; height: 12px; }
+.project-chat-list { display: grid; gap: 1px; padding-left: 12px; }
+.project-chat-list > p { margin: 4px 9px 5px; color: #9a9aa0; font-size: 9px; }
 .thread-row { position: relative; display: flex; align-items: center; border-radius: 6px; }
 .thread-row::before { content: ""; position: absolute; inset: 7px auto 7px 0; width: 2px; border-radius: 2px; background: transparent; }
 .thread-row:hover { background: #ededee; }
@@ -48,6 +61,7 @@
 .project-head-actions { display: flex; gap: 8px; }
 .model-select button:disabled { cursor: not-allowed; opacity: .55; }
 .message-prose { white-space: pre-wrap; }
+.message-status { display: block; width: max-content; margin-top: 7px; border-radius: 9px; padding: 2px 7px; background: #eef2ff; color: #3153a4; font-size: 9px; }
 .code-block { margin: 13px 0; overflow: hidden; border: 1px solid #dedee1; border-radius: 9px; background: #f7f7f8; }
 .code-block header { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e3e3e6; padding: 6px 9px; color: #707078; font-size: 10px; text-transform: lowercase; }
 .code-block header button { border: 0; border-radius: 4px; padding: 3px 6px; background: transparent; color: #55555b; font-size: 10px; }

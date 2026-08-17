@@ -57,6 +57,12 @@
 
 # Completed Action Items
 
+## Session 2026-08-17 (agent visibility, steering, and project organization)
+- Added direct always-visible run evidence, streamed agent PowerShell output, live response previews, per-step token/context accounting, and automatic empty-response recovery.
+- Added steerable queued messages plus nested project/chat trees in the sidebar and Projects view, with project manifests grounding every project conversation.
+- Increased practical context profiles to 32K Fast, 64K Balanced, and 128K Deep while keeping output, run time, and tool steps uncapped.
+- Verified the changes with 12 deterministic tests and syntax checks.
+
 ## Session 2026-08-16 (persistent product foundation and release hardening)
 - Removed automatic model and agent-step limits, enabled unlimited Ollama output, added per-step context trimming with preserved system instructions, and made slow-processing UI states truthful.
 - Added project creation, persistent project-scoped chats, rename/archive controls, model mode persistence, and native thread navigation.

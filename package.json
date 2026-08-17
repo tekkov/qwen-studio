@@ -1,6 +1,6 @@
 {
   "name": "qwen-local-agent",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A free, local-first Qwen coding agent desktop app powered by Ollama",
   "author": "Qwen Studio contributors",
   "license": "MIT",
@@ -25,7 +25,7 @@
     "productName": "Qwen Studio",
     "asar": true,
     "asarUnpack": ["server.py", "mcp-bridge.mjs", "index.html", "*.css", "icons.js", "app.js", "qwen-studio-icon.png"],
-    "files": ["main.js", "preload.js", "server.py", "mcp-bridge.mjs", "index.html", "style.css", "run-status.css", "projects.css", "terminal.css", "product-shell.css", "icons.js", "app.js", "qwen-studio-icon.png", "qwen-studio-icon.ico", "README.md", "LICENSE", "SECURITY.md", "docs/**/*", ".env.example"],
+    "files": ["main.js", "preload.js", "server.py", "mcp-bridge.mjs", "index.html", "style.css", "run-status.css", "projects.css", "project-tree.css", "terminal.css", "product-shell.css", "icons.js", "app.js", "qwen-studio-icon.png", "qwen-studio-icon.ico", "README.md", "LICENSE", "SECURITY.md", "docs/**/*", ".env.example"],
     "win": { "target": ["portable"], "icon": "qwen-studio-icon.ico" }
   }
 }

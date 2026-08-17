@@ -60,6 +60,19 @@ class PersistentStorageTests(unittest.TestCase):
         self.assertIs(selected[0], system)
         self.assertEqual(selected[-1], messages[-1])
 
+    def test_profiles_use_larger_project_contexts(self):
+        self.assertEqual(server.PROFILES["fast"]["num_ctx"], 32768)
+        self.assertEqual(server.PROFILES["balanced"]["num_ctx"], 65536)
+        self.assertEqual(server.PROFILES["deep"]["num_ctx"], 131072)
+
+    def test_project_snapshot_contains_manifest_and_key_files(self):
+        (self.root / "src").mkdir()
+        (self.root / "README.md").write_text("Project-specific instructions", encoding="utf-8")
+        snapshot = server.project_context_snapshot(self.root)
+        self.assertIn("folder: src", snapshot)
+        self.assertIn("[README.md]", snapshot)
+        self.assertIn("Project-specific instructions", snapshot)
+
 
 if __name__ == "__main__":
     unittest.main()

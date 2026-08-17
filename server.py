@@ -2,6 +2,7 @@ import base64
 import json
 import mimetypes
 import os
+import queue
 import re
 import shutil
 import socket
@@ -36,9 +37,9 @@ ATTACHMENTS_LOCK = threading.RLock()
 MODEL_INFO_CACHE = {"at": 0, "value": None}
 
 PROFILES = {
-    "fast": {"label": "Fast", "num_ctx": 8192, "temperature": 0.2, "think": False},
-    "balanced": {"label": "Balanced", "num_ctx": 16384, "temperature": 0.18, "think": False},
-    "deep": {"label": "Deep", "num_ctx": 32768, "temperature": 0.15, "think": True},
+    "fast": {"label": "Fast", "num_ctx": 32768, "temperature": 0.2, "think": False},
+    "balanced": {"label": "Balanced", "num_ctx": 65536, "temperature": 0.18, "think": False},
+    "deep": {"label": "Deep", "num_ctx": 131072, "temperature": 0.15, "think": True},
 }
 
 def ollama_model_info():
@@ -67,6 +68,8 @@ Execution rules:
 - When the user asks you to create, build, implement, change, or fix something, perform the work with tools. Do not merely describe steps or paste the intended artifact into chat.
 - Put generated code and content into real files with write_file (or a scaffolding command that creates files). Creating an empty directory is only setup and never completes a build task.
 - Keep tool calls focused. Do not spend a long generation writing source code into your chat response when that code belongs in a file.
+- Treat the active project folder as authoritative context. For questions about the project, inspect the relevant files instead of guessing from general knowledge.
+- Continue from the current on-disk project state after a steered or interrupted turn; previously completed tool actions may already have changed files.
 - Before finishing an implementation task, inspect the created files and run a relevant verification command when possible. State exactly what was created and tested."""
 
 BUILT_IN_TOOLS = [
@@ -249,10 +252,34 @@ def active_project():
     state = load_project_state()
     return next((item for item in state["items"] if item["id"] == state.get("active")), None)
 
+def activate_project_id(project_id):
+    state = load_project_state()
+    project = next((item for item in state["items"] if item.get("id") == project_id), None)
+    if not project: return None
+    state["active"] = project_id; save_project_state(state)
+    return project
+
 def project_workspace():
     project = active_project()
     if project and Path(project["path"]).is_dir(): return Path(project["path"])
     return ROOT
+
+def project_context_snapshot(workspace):
+    """Build a bounded manifest so every project chat starts from real folder context."""
+    try:
+        entries = sorted(workspace.iterdir(), key=lambda item: (item.is_file(), item.name.lower()))[:120]
+    except OSError:
+        return "The project folder could not be scanned."
+    manifest = [f"- {'file' if item.is_file() else 'folder'}: {item.name}" for item in entries]
+    excerpts, used = [], 0
+    for name in ("AGENTS.md", "README.md", "package.json", "pyproject.toml", "Cargo.toml"):
+        path = workspace / name
+        if not path.is_file(): continue
+        try: content = path.read_text(encoding="utf-8", errors="replace")[:6000]
+        except OSError: continue
+        if used + len(content) > 12000: break
+        excerpts.append(f"\n[{name}]\n{content}"); used += len(content)
+    return "Project top-level manifest:\n" + ("\n".join(manifest) if manifest else "- The folder is currently empty.") + "".join(excerpts)
 
 def resolve_workspace_path(value, workspace):
     path = Path(value)
@@ -312,6 +339,42 @@ def run_tool(name, arguments, mcp_mapping, workspace):
             return json.dumps(terminal_payload(latest), ensure_ascii=False)[-12000:] if latest else "No terminal commands have been run yet."
     return f"Unknown tool: {name}"
 
+def run_command_streamed(command, workspace, job):
+    """Run agent PowerShell with live, bounded output events and cancellation."""
+    process = subprocess.Popen(
+        ["powershell", "-NoLogo", "-NoProfile", "-Command", command], cwd=workspace,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1,
+    )
+    add_job_event(job, "process", f"PowerShell started process {process.pid} in {workspace}.", {"Process ID": process.pid, "Working folder": str(workspace), "Command": redact_text(command)})
+    lines = queue.Queue()
+    def read_output():
+        try:
+            with process.stdout:
+                for line in process.stdout: lines.put(line)
+        finally: lines.put(None)
+    threading.Thread(target=read_output, daemon=True).start()
+    output, pending, reader_done, last_event = [], [], False, time.time()
+    while process.poll() is None or not reader_done or not lines.empty():
+        try: line = lines.get(timeout=0.2)
+        except queue.Empty: line = ""
+        if line is None: reader_done = True
+        elif line:
+            output.append(line); pending.append(line.rstrip())
+            update_job_activity(job, "tool", f"PowerShell process {process.pid} is running: {line.strip()[:180]}", processId=process.pid, lastCommandOutput=line.strip()[:500])
+        if pending and (time.time() - last_event >= 0.8 or len(pending) >= 8 or (process.poll() is not None and reader_done)):
+            preview = redact_text("\n".join(pending))[-2000:]
+            add_job_event(job, "process_output", f"PowerShell output: {preview}", {"Process ID": process.pid})
+            pending.clear(); last_event = time.time()
+        if job.get("cancelRequested") and process.poll() is None:
+            if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10)
+            else: process.terminate()
+    exit_code = process.wait()
+    if pending:
+        preview = redact_text("\n".join(pending))[-2000:]
+        add_job_event(job, "process_output", f"PowerShell output: {preview}", {"Process ID": process.pid})
+    text = "".join(output)
+    return f"exit_code={exit_code}\nSTDOUT:\n{text}\nSTDERR:\n"[-12000:]
+
 def add_job_event(job, kind, text, detail=None):
     with JOBS_LOCK:
         now = time.time()
@@ -362,7 +425,7 @@ def stream_ollama_chat(payload, job):
                 message["tool_calls"].extend(part["tool_calls"])
             chunks += 1
             stage = "Qwen is writing its response." if message["content"] else "Qwen is analyzing the request and deciding what to do."
-            update_job_activity(job, "generating", stage, streamChunks=chunks, generatedCharacters=len(message["content"]), thinkingCharacters=len(message["thinking"]), elapsedSeconds=round(time.time() - started, 1), lastChunkAt=time.time())
+            update_job_activity(job, "generating", stage, streamChunks=chunks, generatedCharacters=len(message["content"]), thinkingCharacters=len(message["thinking"]), responsePreview=message["content"][-1600:], elapsedSeconds=round(time.time() - started, 1), lastChunkAt=time.time())
             if chunk.get("done"):
                 final = chunk
     if job.get("cancelRequested"):
@@ -390,6 +453,27 @@ def performance_details(result):
         "Prompt processing": f"{prompt_tps:.1f} tokens/second" if prompt_tps else "Not reported",
         "Model time": f"{int(result.get('total_duration') or 0) / 1_000_000_000:.1f} seconds",
     }
+
+def record_model_step(job, result, profile, step):
+    eval_count = int(result.get("eval_count") or 0); prompt_count = int(result.get("prompt_eval_count") or 0)
+    eval_duration = int(result.get("eval_duration") or 0); prompt_duration = int(result.get("prompt_eval_duration") or 0)
+    generation_tps = eval_count / (eval_duration / 1_000_000_000) if eval_count and eval_duration else 0
+    prompt_tps = prompt_count / (prompt_duration / 1_000_000_000) if prompt_count and prompt_duration else 0
+    with JOBS_LOCK:
+        metrics = job.setdefault("metrics", {})
+        metrics["totalPromptTokens"] = int(metrics.get("totalPromptTokens") or 0) + prompt_count
+        metrics["totalGeneratedTokens"] = int(metrics.get("totalGeneratedTokens") or 0) + eval_count
+        metrics["contextBudget"] = profile["num_ctx"]
+        metrics["lastPromptTokens"] = prompt_count
+        metrics["lastGeneratedTokens"] = eval_count
+        metrics["lastGenerationTps"] = round(generation_tps, 2)
+    usage = (prompt_count / profile["num_ctx"] * 100) if prompt_count else 0
+    add_job_event(job, "model_complete", f"Model step {step} finished: {prompt_count:,} prompt tokens processed and {eval_count:,} tokens generated at {generation_tps:.1f} TPS.", {
+        "Context used": f"{prompt_count:,} / {profile['num_ctx']:,} tokens ({usage:.1f}%)",
+        "Prompt processing speed": f"{prompt_tps:.1f} tokens/second" if prompt_tps else "Not reported",
+        "Generation speed": f"{generation_tps:.1f} tokens/second" if generation_tps else "Not reported",
+        "Running totals": f"{job['metrics']['totalPromptTokens']:,} prompt · {job['metrics']['totalGeneratedTokens']:,} generated tokens",
+    })
 
 def run_terminal_command(run_id, command, workspace):
     run = TERMINAL_RUNS[run_id]
@@ -505,7 +589,8 @@ def run_agent_job(job_id, incoming):
         add_job_event(job, "setup", "Opening the active project and checking which computer tools and MCP connections Qwen can use.", {"Project": project["name"] if project else "Qwen Studio folder", "Working folder": str(workspace), "Built-in tools": "Read files, write files, list folders, PowerShell", "MCP connections": len(load_mcps())})
         mcp_tools, mcp_mapping = connected_mcp_tools()
         if mcp_tools: add_job_event(job, "mcp", f"Loaded {len(mcp_tools)} MCP tool{'s' if len(mcp_tools) != 1 else ''}.")
-        workspace_prompt = f"\n\nThe active project folder is: {workspace}. Resolve relative file paths and PowerShell work inside this folder."
+        snapshot = project_context_snapshot(workspace)
+        workspace_prompt = f"\n\nThe active project folder is: {workspace}. Resolve relative file paths and PowerShell work inside this folder. Use the following real project snapshot as orientation, then inspect relevant files with tools before making project-specific claims.\n\n{snapshot}"
         conversation = [{"role": "system", "content": SYSTEM + workspace_prompt}] + messages
         profile = PROFILES.get(mode, PROFILES["fast"])
         options = {"temperature": profile["temperature"], "num_ctx": profile["num_ctx"], "num_predict": -1}
@@ -522,8 +607,13 @@ def run_agent_job(job_id, incoming):
             payload = {"model": MODEL, "messages": request_conversation, "tools": BUILT_IN_TOOLS + mcp_tools, "options": options, "think": think, "keep_alive": "30m"}
             message, result = stream_ollama_chat(payload, job)
             step += 1
+            record_model_step(job, result, profile, step)
             calls = message.get("tool_calls", [])
             if not calls:
+                if not str(message.get("content", "")).strip():
+                    add_job_event(job, "guardrail", "Qwen returned no visible answer. The app rejected the empty response and asked Qwen to summarize the work and verification evidence.", {"Requirement": "A useful visible final answer", "Next action": "Continue the agent loop and produce a concrete summary"})
+                    conversation.append({"role": "user", "content": "Your previous turn had no visible answer. Continue now. Inspect the current project state if needed, then provide a concrete final response explaining what you did, which files changed, what tests ran, and any remaining issue. Do not return an empty response."})
+                    continue
                 if requires_artifacts and not job.get("artifacts"):
                     add_job_event(job, "guardrail", "Qwen tried to finish before creating any files. The app rejected that answer and told Qwen to continue the actual work.", {"Requirement": "Create at least one real file", "Current artifacts": 0, "Next action": "Use file or scaffolding tools, then verify the result"})
                     conversation.append(message)
@@ -533,7 +623,7 @@ def run_agent_job(job_id, incoming):
                     job["status"] = "complete"; job["message"] = message; job["finishedAt"] = time.time()
                 if incoming.get("threadId"):
                     append_thread_message(incoming["threadId"], "assistant", message.get("content", ""))
-                add_job_event(job, "complete", "Qwen finished generating the answer.", {"Component": "Agent loop", "Result": "No more tool calls requested", **performance_details(result)})
+                add_job_event(job, "complete", "Qwen finished generating the answer.", {"Component": "Agent loop", "Result": "No more tool calls requested", "Total prompt tokens": f"{job['metrics'].get('totalPromptTokens', 0):,}", "Total generated tokens": f"{job['metrics'].get('totalGeneratedTokens', 0):,}", **performance_details(result)})
                 update_job_activity(job, "complete", "Finished.")
                 return
             conversation.append(message)
@@ -546,8 +636,10 @@ def run_agent_job(job_id, incoming):
                 add_job_event(job, "tool", explanation, detail)
                 update_job_activity(job, "tool", explanation)
                 try:
-                    output = run_tool(name, args, mcp_mapping, workspace); ok = True
+                    output = run_command_streamed(args.get("command", ""), workspace, job) if name == "run_command" else run_tool(name, args, mcp_mapping, workspace); ok = True
+                    if job.get("cancelRequested"): raise RuntimeError("Stopped by user.")
                 except Exception as error:
+                    if job.get("cancelRequested"): raise
                     output, ok = f"Tool error: {error}", False
                 conversation.append({"role": "tool", "content": output})
                 if ok and (name == "write_file" or (name == "run_command" and command_creates_artifacts(args.get("command", "")))):
@@ -720,6 +812,8 @@ class Handler(BaseHTTPRequestHandler):
             thread = thread_by_id(thread_id) if thread_id else None
             if not thread:
                 project = active_project(); thread = create_thread(project.get("id") if project else None, mode=incoming.get("mode", "fast")); thread_id = thread["id"]
+            elif thread.get("projectId") and (active_project() or {}).get("id") != thread.get("projectId"):
+                if not activate_project_id(thread.get("projectId")): self.send_json(400, {"error": "This chat's project is no longer linked."}); return
             user_text = incoming.get("message", "").strip()
             if not user_text and not incoming.get("messages"):
                 self.send_json(400, {"error": "Add a message first."}); return

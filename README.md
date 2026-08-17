@@ -7,10 +7,13 @@ No OpenAI key or hosted account is required. Your model requests stay between th
 ## What works
 
 - Create projects or link existing folders; each project keeps its own chat history.
+- Browse projects as folders with their chats nested underneath in both the sidebar and Projects view.
 - Let Qwen list, read, and write files and run PowerShell inside the active project.
 - Attach images, source/text files, and videos. Videos are sampled into bounded frames with FFmpeg for Qwen vision.
-- Use Fast (8K), Balanced (16K), or Deep (32K thinking) profiles while displaying the model's native context separately.
+- Use Fast (32K), Balanced (64K), or Deep (128K thinking) profiles with unlimited output and run time while displaying the model's 262K native maximum separately.
 - Follow live plain-language agent events, exact technical details, elapsed time, first-token activity, and final TPS metrics.
+- See exact commands, process IDs, streamed PowerShell output, live answer drafts, and per-step context/token usage without expanding hidden panels.
+- Send more messages during a run to steer the current task; later directions remain queued and run in order.
 - Add local stdio MCP servers and inspect an integrated project terminal.
 - Stop model runs and terminal processes.
 

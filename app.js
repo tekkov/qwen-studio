@@ -1,4 +1,4 @@
-const state = { history: [], mode: 'fast', currentView: 'chat', running: false, terminalRun: null, terminalHistory: [], terminalHistoryIndex: 0, terminalTranscript: '', project: null, threadId: null, pendingAttachments: [] };
+const state = { history: [], mode: 'fast', profiles: {}, currentView: 'chat', running: false, activeJobId: null, activeRunCard: null, queuedDirections: [], steering: false, terminalRun: null, terminalHistory: [], terminalHistoryIndex: 0, terminalTranscript: '', project: null, threadId: null, pendingAttachments: [] };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const messages = $('#messages');
@@ -8,8 +8,10 @@ const modeNames = { fast: 'Fast', balanced: 'Balanced', deep: 'Deep' };
 
 function renderMode() {
   const label = modeNames[state.mode] || modeNames.fast;
-  $('#mode').textContent = label;
+  const context = Number(state.profiles?.[state.mode]?.num_ctx || ({ fast: 32768, balanced: 65536, deep: 131072 }[state.mode]));
+  $('#mode').textContent = `${label} · ${Math.round(context / 1024)}K`;
   $('#settings-mode').textContent = label;
+  $('#settings-profile-context').textContent = `${context.toLocaleString()} tokens`;
 }
 
 function showView(view) {
@@ -35,11 +37,12 @@ async function loadStatus() {
     $('#terminal-path').textContent = data.workspace;
     $('#mcp-badge').textContent = data.mcpCount;
     state.project = data.project || null;
+    state.profiles = data.profiles || state.profiles;
+    renderMode();
     $('#active-project-name').textContent = data.project?.name || 'No project';
     $('#settings-runtime').textContent = data.runtime?.available ? 'Connected' : 'Offline';
     $('#settings-capabilities').textContent = (data.runtime?.capabilities || []).join(', ') || 'Not reported';
     $('#settings-native-context').textContent = data.runtime?.nativeContext ? `${Number(data.runtime.nativeContext).toLocaleString()} tokens` : 'Not reported';
-    $('#settings-profile-context').textContent = `${Number(data.profiles?.[state.mode]?.num_ctx || 8192).toLocaleString()} tokens`;
     setConnected(true);
   } catch { setConnected(false); }
 }
@@ -67,33 +70,67 @@ async function openThread(threadId) {
   prompt.focus();
 }
 
+async function activateProject(projectId, openLatest = true) {
+  if (state.running) return false;
+  const response = await fetch(`/api/projects/${projectId}/activate`, { method: 'POST' });
+  if (!response.ok) return false;
+  state.threadId = null; state.history = []; clearThreadSurface(); intro.hidden = false;
+  await loadStatus();
+  if (state.currentView === 'workspace') refreshProjects();
+  await refreshThreads(openLatest);
+  return true;
+}
+
+async function openProjectThread(projectId, threadId) {
+  if (state.running) return;
+  if (state.project?.id !== projectId && !(await activateProject(projectId, false))) return;
+  await openThread(threadId);
+  await refreshThreads();
+}
+
 async function refreshThreads(openLatest = false) {
   const list = $('#thread-list');
-  if (!state.project) { list.innerHTML = '<p>Link a project to keep chats together.</p>'; return; }
   try {
-    const data = await fetch(`/api/threads?projectId=${encodeURIComponent(state.project.id)}`).then(response => response.json());
+    const [projects, data] = await Promise.all([fetch('/api/projects').then(response => response.json()), fetch('/api/threads').then(response => response.json())]);
     list.innerHTML = '';
-    if (!data.items.length) list.innerHTML = '<p>No chats in this project yet.</p>';
-    data.items.forEach(thread => {
+    if (!projects.items.length) { list.innerHTML = '<p>Create or link a project to organize its chats.</p>'; return; }
+    projects.items.forEach(project => {
+      const projectThreads = data.items.filter(thread => thread.projectId === project.id);
+      const group = document.createElement('section'); group.className = `project-thread-group ${project.id === projects.active ? 'active' : ''}`;
+      const head = document.createElement('div'); head.className = 'project-thread-head';
+      const projectButton = document.createElement('button'); projectButton.type = 'button'; projectButton.className = 'project-tree-button'; projectButton.dataset.projectId = project.id;
+      const icon = document.createElement('span'); icon.dataset.icon = 'folder'; const name = document.createElement('span'); name.textContent = project.name;
+      const count = document.createElement('small'); count.textContent = String(projectThreads.length); projectButton.append(icon, name, count);
+      projectButton.addEventListener('click', () => activateProject(project.id, true));
+      const add = document.createElement('button'); add.type = 'button'; add.className = 'project-chat-add'; add.title = `New chat in ${project.name}`; add.dataset.icon = 'plus';
+      add.addEventListener('click', async () => { if (state.project?.id !== project.id && !(await activateProject(project.id, false))) return; await createChat(); });
+      head.append(projectButton, add); group.append(head);
+      const chats = document.createElement('div'); chats.className = 'project-chat-list';
+      if (!projectThreads.length) { const empty = document.createElement('p'); empty.textContent = 'No chats yet'; chats.append(empty); }
+      projectThreads.forEach(thread => {
       const row = document.createElement('div'); row.className = `thread-row ${thread.id === state.threadId ? 'active' : ''}`;
       const button = document.createElement('button');
       button.type = 'button'; button.className = 'thread-item'; button.dataset.threadId = thread.id;
       const title = document.createElement('span'); title.textContent = thread.title || 'New chat';
       const meta = document.createElement('small'); meta.textContent = `${thread.messageCount || 0} messages`;
-      button.append(title, meta); button.addEventListener('click', () => openThread(thread.id));
+      button.append(title, meta); button.addEventListener('click', () => openProjectThread(project.id, thread.id));
       const actions = document.createElement('div'); actions.className = 'thread-actions';
       const rename = document.createElement('button'); rename.type = 'button'; rename.title = 'Rename chat'; rename.dataset.icon = 'edit';
       rename.addEventListener('click', async () => { const next = window.prompt('Rename chat', thread.title || 'New chat'); if (!next?.trim()) return; await fetch(`/api/threads/${thread.id}/rename`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: next.trim() }) }); refreshThreads(); });
       const archive = document.createElement('button'); archive.type = 'button'; archive.title = 'Archive chat'; archive.dataset.icon = 'archive';
       archive.addEventListener('click', async () => { await fetch(`/api/threads/${thread.id}/archive`, { method: 'POST' }); if (state.threadId === thread.id) await createChat(); else refreshThreads(); });
-      actions.append(rename, archive); row.append(button, actions); list.append(row); window.renderQwenIcons(row);
+      actions.append(rename, archive); row.append(button, actions); chats.append(row); window.renderQwenIcons(row);
+      });
+      group.append(chats); list.append(group); window.renderQwenIcons(group);
     });
-    if (openLatest && data.items.length) await openThread(data.items[0].id);
-  } catch { list.innerHTML = '<p>Chats could not be loaded.</p>'; }
+    const activeThreads = data.items.filter(thread => thread.projectId === projects.active);
+    if (openLatest && activeThreads.length) await openThread(activeThreads[0].id);
+  } catch { list.innerHTML = '<p>Projects and chats could not be loaded.</p>'; }
 }
 
 async function createChat() {
   if (state.running) return null;
+  if (!state.project) { showView('workspace'); await refreshProjects(); return null; }
   const response = await fetch('/api/threads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectId: state.project?.id || null, mode: state.mode }) });
   if (!response.ok) return null;
   const thread = await response.json();
@@ -231,7 +268,7 @@ function renderAssistantContent(container, text) {
   }
 }
 
-function addMessage(role, text, attachments = []) {
+function addMessage(role, text, attachments = [], statusText = '') {
   const message = document.createElement('article');
   message.className = `message ${role}`;
   const label = document.createElement('span');
@@ -243,14 +280,16 @@ function addMessage(role, text, attachments = []) {
   if (attachments?.length) {
     const media = document.createElement('div'); media.className = 'message-attachments'; attachments.forEach(item => media.append(attachmentVisual(item))); message.append(media);
   }
+  if (statusText) { const status = document.createElement('span'); status.className = 'message-status'; status.textContent = statusText; message.append(status); }
   messages.append(message);
   message.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  return message;
 }
 
 function addRunStatus() {
   const card = document.createElement('section');
   card.className = 'run-status';
-  card.innerHTML = '<div class="run-status-head"><span class="run-spinner"></span><strong>Qwen is working</strong><span class="run-elapsed">0:00</span><span class="run-state">Starting</span><button class="run-stop" type="button">Stop</button></div><div class="run-live" role="status" aria-live="polite"><span class="live-pulse"></span><div><strong>Starting the local agent</strong><small>Preparing your request…</small></div></div><div class="run-events"></div>';
+  card.innerHTML = '<div class="run-status-head"><span class="run-spinner"></span><strong>Qwen is working</strong><span class="run-elapsed">0:00</span><span class="run-state">Starting</span><button class="run-stop" type="button">Stop</button></div><div class="run-live" role="status" aria-live="polite"><span class="live-pulse"></span><div><strong>Starting the local agent</strong><small>Preparing your request…</small></div></div><pre class="run-draft" aria-label="Live response preview" hidden></pre><div class="run-events"></div>';
   messages.append(card);
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   return card;
@@ -268,7 +307,9 @@ function updateRunActivity(card, job) {
   const labels = { queued: 'Queued', setup: 'Preparing your workspace', model: 'Loading the request into Qwen', generating: 'Qwen is generating', tool: 'Using a computer tool', complete: 'Finished' };
   live.querySelector('strong').textContent = labels[job.phase] || 'Qwen is working';
   const metrics = job.metrics || {};
-  const generated = metrics.generatedCharacters ? ` · ${Number(metrics.generatedCharacters).toLocaleString()} characters generated` : '';
+  const draft = card.querySelector('.run-draft');
+  if (metrics.responsePreview) { draft.hidden = false; draft.textContent = metrics.responsePreview; }
+  const generated = metrics.totalGeneratedTokens ? ` · ${Number(metrics.totalGeneratedTokens).toLocaleString()} generated tokens total` : metrics.generatedCharacters ? ` · ${Number(metrics.generatedCharacters).toLocaleString()} characters generated` : '';
   const staleSeconds = Math.max(0, Math.floor(Date.now() / 1000 - (job.updatedAt || Date.now() / 1000)));
   if (['model', 'generating'].includes(job.phase) && staleSeconds >= 10) {
     live.querySelector('strong').textContent = job.phase === 'model' ? 'Ollama is processing the conversation' : 'Waiting for more model output';
@@ -289,9 +330,7 @@ function appendRunEvent(card, event) {
   title.textContent = event.text;
   item.append(title);
   if (event.detail && Object.keys(event.detail).length) {
-    const details = document.createElement('details');
-    const summary = document.createElement('summary');
-    summary.textContent = 'How this works';
+    const details = document.createElement('div'); details.className = 'run-event-detail';
     const fields = document.createElement('dl');
     Object.entries(event.detail).forEach(([label, value]) => {
       const term = document.createElement('dt');
@@ -301,7 +340,7 @@ function appendRunEvent(card, event) {
       if (/command|path|input|output|error/i.test(label)) description.className = 'technical-value';
       fields.append(term, description);
     });
-    details.append(summary, fields);
+    details.append(fields);
     item.append(details);
   }
   card.querySelector('.run-events').append(item);
@@ -344,6 +383,7 @@ async function watchJob(jobId, card) {
       return;
     }
     if (job.status === 'error' || job.status === 'stopped') {
+      if (job.status === 'stopped' && state.steering) { finishRunCard(card, 'Steered'); return { steered: true }; }
       finishRunCard(card, 'Stopped', true);
       throw new Error(job.error || 'Qwen could not complete that request.');
     }
@@ -352,36 +392,75 @@ async function watchJob(jobId, card) {
 
 async function newChat() { await createChat(); }
 
-async function sendMessage(text) {
-  if ((!text.trim() && !state.pendingAttachments.length) || state.running) return;
+async function queueDirection(text) {
+  if (!text.trim() && !state.pendingAttachments.length) return;
+  const attachments = [...state.pendingAttachments]; state.pendingAttachments = []; renderAttachmentTray();
+  const content = text.trim() || 'Review the attached file and incorporate it into the current task.';
+  const element = addMessage('user', content, attachments, 'Queued to steer the active run');
+  state.queuedDirections.push({ text: content, attachments, element });
+  if (state.activeRunCard) appendRunEvent(state.activeRunCard, { kind: 'steer', text: `New direction received: ${content}`, detail: { Queue: `${state.queuedDirections.length} message${state.queuedDirections.length === 1 ? '' : 's'} waiting`, Action: 'Stopping the current model turn, then continuing with this direction' } });
+  $('#send').textContent = 'Queued';
+  if (!state.steering && state.activeJobId) {
+    state.steering = true;
+    await fetch(`/api/jobs/${state.activeJobId}`, { method: 'DELETE' });
+  }
+}
+
+async function drainDirections() {
+  if (state.running || !state.queuedDirections.length) return;
+  const next = state.queuedDirections.shift();
+  const status = next.element?.querySelector('.message-status'); if (status) status.textContent = 'Steering Qwen now';
+  await sendMessage(next.text, { attachments: next.attachments, alreadyRendered: true, messageElement: next.element });
+}
+
+async function sendMessage(text, options = {}) {
+  if (state.running) { await queueDirection(text); return; }
+  const availableAttachments = options.attachments || state.pendingAttachments;
+  if (!text.trim() && !availableAttachments.length) return;
   if (!state.threadId && !(await createChat())) return;
-  const outgoingAttachments = [...state.pendingAttachments];
+  const outgoingAttachments = [...availableAttachments];
   const outgoingText = text.trim() || 'Review the attached file and help me with it.';
+  state.steering = false;
   state.running = true;
   intro.hidden = true;
   state.history.push({ role: 'user', content: outgoingText, attachments: outgoingAttachments });
-  addMessage('user', outgoingText, outgoingAttachments);
-  $('#send').disabled = true;
-  $('#send').textContent = 'Working';
+  if (!options.alreadyRendered) addMessage('user', outgoingText, outgoingAttachments);
+  $('#send').disabled = false;
+  $('#send').textContent = 'Steer';
   $('#mode').disabled = true;
   const runCard = addRunStatus();
+  state.activeRunCard = runCard;
   try {
-    const response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: state.threadId, message: outgoingText, attachments: outgoingAttachments.map(item => item.id), mode: state.mode }) });
-    const data = await response.json();
+    let response; let data;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      response = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ threadId: state.threadId, message: outgoingText, attachments: outgoingAttachments.map(item => item.id), mode: state.mode }) });
+      data = await response.json();
+      if (response.status !== 409 || !options.alreadyRendered) break;
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
     if (!response.ok) throw new Error(data.error || 'Qwen could not start that request.');
+    const queuedStatus = options.messageElement?.querySelector('.message-status'); if (queuedStatus) queuedStatus.textContent = 'Direction sent to Qwen';
     state.threadId = data.threadId || state.threadId;
-    state.pendingAttachments = []; renderAttachmentTray();
+    if (!options.attachments) { state.pendingAttachments = []; renderAttachmentTray(); }
+    state.activeJobId = data.jobId;
+    if (state.queuedDirections.length && !state.steering) { state.steering = true; await fetch(`/api/jobs/${state.activeJobId}`, { method: 'DELETE' }); }
     await watchJob(data.jobId, runCard);
     await refreshThreads();
     setConnected(true);
   } catch (error) {
-    finishRunCard(runCard, 'Stopped', true);
-    const live = runCard.querySelector('.run-live');
-    live.querySelector('strong').textContent = 'The run stopped';
-    live.querySelector('small').textContent = error.message;
-    addMessage('assistant', `Error: ${error.message}`);
+    if (!state.steering) {
+      finishRunCard(runCard, 'Stopped', true);
+      const live = runCard.querySelector('.run-live');
+      live.querySelector('strong').textContent = 'The run stopped';
+      live.querySelector('small').textContent = error.message;
+      addMessage('assistant', `Error: ${error.message}`);
+    }
   }
-  finally { state.running = false; $('#send').disabled = false; $('#send').textContent = 'Send'; $('#mode').disabled = false; prompt.focus(); }
+  finally {
+    state.running = false; state.activeJobId = null; state.activeRunCard = null;
+    $('#send').disabled = false; $('#send').textContent = state.queuedDirections.length ? 'Queued' : 'Send'; $('#mode').disabled = false; prompt.focus();
+    if (state.queuedDirections.length) setTimeout(drainDirections, 0);
+  }
 }
 
 function argsToLines(args = []) { return args.join('\n'); }
@@ -418,16 +497,29 @@ async function refreshMcps() {
 
 async function refreshProjects() {
   try {
-    const [projects, tree] = await Promise.all([fetch('/api/projects').then(r => r.json()), fetch('/api/project/files').then(r => r.json())]);
+    const [projects, tree, threads] = await Promise.all([fetch('/api/projects').then(r => r.json()), fetch('/api/project/files').then(r => r.json()), fetch('/api/threads').then(r => r.json())]);
     const list = $('#project-list'); list.innerHTML = '';
     if (!projects.items.length) list.innerHTML = '<p class="muted">No project folders linked yet. Link a folder to give Qwen a dedicated workspace.</p>';
     projects.items.forEach(project => {
       const card = document.createElement('article');
       const active = projects.active === project.id;
       card.className = `project-card ${active ? 'active' : ''}`;
-      card.innerHTML = `<span class="project-icon" data-icon="folder"></span><div class="project-main"><strong>${project.name}</strong><span>${project.path}</span></div><div class="project-actions">${active ? '<span class="active-project"><span data-icon="check"></span>Active</span>' : '<button class="outline activate">Open</button>'}<button class="icon-only remove-project" title="Unlink project" data-icon="trash"></button></div>`;
-      card.querySelector('.activate')?.addEventListener('click', async () => { await fetch(`/api/projects/${project.id}/activate`, { method: 'POST' }); state.threadId = null; state.history = []; clearThreadSurface(); intro.hidden = false; await Promise.all([refreshProjects(), loadStatus()]); await refreshThreads(true); });
+      card.innerHTML = `<div class="project-card-head"><span class="project-icon" data-icon="folder"></span><div class="project-main"><strong>${project.name}</strong><span>${project.path}</span></div><div class="project-actions">${active ? '<span class="active-project"><span data-icon="check"></span>Active</span>' : '<button class="outline activate">Open</button>'}<button class="icon-only remove-project" title="Unlink project" data-icon="trash"></button></div></div>`;
+      card.querySelector('.activate')?.addEventListener('click', async () => { await activateProject(project.id, true); });
       card.querySelector('.remove-project').addEventListener('click', async () => { await fetch(`/api/projects/${project.id}`, { method: 'DELETE' }); await Promise.all([refreshProjects(), loadStatus()]); });
+      const chatArea = document.createElement('div'); chatArea.className = 'project-card-chats';
+      const chatHead = document.createElement('div'); chatHead.className = 'project-card-chats-head'; const chatLabel = document.createElement('span'); chatLabel.textContent = 'Chats';
+      const addChat = document.createElement('button'); addChat.type = 'button'; addChat.textContent = 'New chat';
+      addChat.addEventListener('click', async () => { if (state.project?.id !== project.id && !(await activateProject(project.id, false))) return; await createChat(); });
+      chatHead.append(chatLabel, addChat); chatArea.append(chatHead);
+      const projectThreads = threads.items.filter(thread => thread.projectId === project.id);
+      if (!projectThreads.length) { const empty = document.createElement('p'); empty.textContent = 'No chats in this project yet.'; chatArea.append(empty); }
+      projectThreads.slice(0, 8).forEach(thread => {
+        const chat = document.createElement('button'); chat.type = 'button'; chat.className = `project-card-chat ${thread.id === state.threadId ? 'active' : ''}`;
+        const title = document.createElement('span'); title.textContent = thread.title || 'New chat'; const count = document.createElement('small'); count.textContent = `${thread.messageCount || 0} messages`;
+        chat.append(title, count); chat.addEventListener('click', () => openProjectThread(project.id, thread.id)); chatArea.append(chat);
+      });
+      card.append(chatArea);
       list.append(card); window.renderQwenIcons(card);
     });
     $('#workspace-path').textContent = tree.path;

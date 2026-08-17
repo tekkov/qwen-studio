@@ -24,22 +24,23 @@
 .live-pulse { flex: 0 0 auto; width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: #2563eb; box-shadow: 0 0 0 0 rgba(37, 99, 235, .35); animation: live-pulse 1.6s ease-out infinite; }
 .run-live.finished .live-pulse { background: #16a34a; animation: none; }
 .run-live.failed .live-pulse { background: #dc2626; animation: none; }
+.run-draft { max-height: 180px; overflow: auto; margin: 0 13px 10px; border: 1px solid #e2e2e5; border-radius: 7px; padding: 10px 11px; background: #fff; color: #39393f; font: 10px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; white-space: pre-wrap; }
 .run-events { border-top: 1px solid #ebebed; padding: 4px 13px 9px; }
 .run-event { position: relative; padding: 9px 0 1px 17px; color: #74747a; font-size: 11px; line-height: 1.45; }
 .run-event::before { content: ""; position: absolute; left: 1px; top: 14px; width: 6px; height: 6px; border-radius: 50%; background: #b9b9bf; }
 .run-event.tool, .run-event.tool_complete { color: #44444a; }
 .run-event.tool::before { background: #002fa7; }
 .run-event.tool_complete::before, .run-event.complete::before { background: #16a34a; }
+.run-event.model_complete::before { background: #0891b2; }
 .run-event.tool_error::before, .run-event.error::before { background: #dc2626; }
-.run-event details { margin: 6px 0 2px; border-left: 1px solid #dedee1; padding-left: 10px; }
-.run-event summary { width: max-content; color: #002fa7; cursor: pointer; font-size: 10px; list-style: none; }
-.run-event summary::-webkit-details-marker { display: none; }
-.run-event summary::after { content: " +"; }
-.run-event details[open] summary::after { content: " −"; }
-.run-event dl { display: grid; grid-template-columns: 105px minmax(0, 1fr); gap: 5px 12px; margin: 9px 0 3px; padding: 9px 10px; border: 1px solid #e8e8ea; border-radius: 6px; background: #fff; }
+.run-event-detail { margin: 6px 0 2px; border-left: 1px solid #d8d8dc; padding-left: 10px; }
+.run-event dl { display: grid; grid-template-columns: 105px minmax(0, 1fr); gap: 5px 12px; margin: 0; padding: 8px 10px; border: 1px solid #e8e8ea; border-radius: 6px; background: #fff; }
 .run-event dt { color: #88888e; font-size: 10px; }
 .run-event dd { margin: 0; overflow-wrap: anywhere; color: #46464b; font-size: 10px; white-space: pre-wrap; }
 .run-event dd.technical-value { color: #303035; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+.run-event.process::before, .run-event.process_output::before { background: #7c3aed; }
+.run-event.process_output .run-event-title { border-radius: 5px; padding: 7px 9px; background: #f5f3ff; color: #39304f; font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; white-space: pre-wrap; }
+.run-event.steer::before { background: #d97706; }
 @keyframes run-spin { to { transform: rotate(360deg); } }
 @keyframes live-pulse { 70% { box-shadow: 0 0 0 7px rgba(37, 99, 235, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); } }
 @media (prefers-reduced-motion: reduce) { .run-spinner, .live-pulse { animation: none; } }
