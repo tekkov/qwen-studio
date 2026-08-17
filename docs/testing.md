@@ -1,6 +1,8 @@
 # Testing and benchmarks
 
-Run deterministic tests and syntax checks with `npm run check`. The suite covers artifact enforcement, plain chat completion, project/thread/attachment APIs, persistent thread messages, text/image Ollama payload preparation, and context trimming.
+Run deterministic tests and syntax checks with `npm run check`. The suite covers artifact enforcement, plain chat completion, project/thread/attachment APIs, persistent thread messages, text/image Ollama payload preparation, semantic context handoffs, recovery blocking, MCP diagnostics, and context trimming.
+
+Run `npm run audit:release` before publishing. It checks required release files, local README links, and source-tree credential patterns while excluding generated binaries and the ignored `.env`.
 
 Run the optional real-model tool test with Ollama running:
 

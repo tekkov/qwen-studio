@@ -1,48 +1,125 @@
-# Qwen Studio
+# Qwen Studio 🧠⚡
 
-Qwen Studio is a free, local-first desktop coding agent for Qwen models running through Ollama. It combines persistent project chats, real filesystem and PowerShell tools, image/video/file intake, MCP connections, a project terminal, and understandable live run activity in one Windows app.
+> A local-first desktop AI coding studio for Qwen + Ollama — private by default, powerful on purpose.
 
-No OpenAI key or hosted account is required. Your model requests stay between this app and your local Ollama service.
+[![CI](https://github.com/tekkov/qwen-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/tekkov/qwen-studio/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6.svg)](#requirements)
+[![Powered by Ollama](https://img.shields.io/badge/powered%20by-Ollama-black.svg)](https://ollama.com/)
 
-## What works
+Qwen Studio turns a local Qwen model into a friendly, transparent coding partner. Chat normally, organize work into projects, inspect live tool activity, use a real terminal, connect MCP servers, and keep your files on your own machine. 🏠🔒
 
-- Create projects or link existing folders; each project keeps its own chat history.
-- Browse projects as folders with their chats nested underneath in both the sidebar and Projects view.
-- Let Qwen list, read, and write files and run PowerShell inside the active project.
-- Attach images, source/text files, and videos. Videos are sampled into bounded frames with FFmpeg for Qwen vision.
-- Use Fast (32K), Balanced (64K), or Deep (128K thinking) profiles with unlimited output and run time while displaying the model's 262K native maximum separately.
-- Follow live plain-language agent events, exact technical details, elapsed time, first-token activity, and final TPS metrics.
-- See exact commands, process IDs, streamed PowerShell output, live answer drafts, and per-step context/token usage without expanding hidden panels.
-- Send more messages during a run to steer the current task; later directions remain queued and run in order.
-- Add local stdio MCP servers and inspect an integrated project terminal.
-- Stop model runs and terminal processes.
+No hosted AI account is required for normal local work. No mystery cloud sync. No black-box “trust me” button. Just a desktop app, your model, your files, and useful receipts for what happened.
 
-The installed `qwen3.8:27b` is a 27.3B Q4 model with vision, tool use, thinking, and a 262,144-token native context window. Practical app profiles are intentionally smaller for responsiveness on consumer hardware.
+## ✨ What makes it fun
 
-## Quick start
+- 💬 **General chats + project chats** — brainstorm freely or give a conversation a dedicated folder.
+- 🛠️ **Real computer tools** — read/write files, run PowerShell, inspect Git, and review changed files.
+- 👀 **Receipts, not vibes** — live phases, commands, process IDs, output, approvals, checkpoints, and final status.
+- 🧭 **Three response modes** — Fast, Balanced, and Deep profiles for different kinds of work.
+- 📎 **Multimodal intake** — attach source files, text, images, and videos for Qwen to inspect.
+- 🔌 **MCP-ready** — connect local stdio or Streamable HTTP MCP servers.
+- 🖥️ **Integrated terminal** — a project-aware PowerShell terminal lives where the work happens.
+- 🧯 **Recoverable by design** — pause, stop, resume, steer, and safely surface blocked work.
+- 🤖 **Optional Autopilot** — Codex can review milestones and failures while Qwen remains the primary worker.
 
-Requirements: Windows 10/11, Python 3.11+, Node.js 20+, [Ollama](https://ollama.com/), and FFmpeg for video attachments.
+## 🎬 The vibe
+
+Qwen Studio is built for the moment when you want an AI coding tool that feels like a studio, not a slot machine:
+
+```text
+You:   “Make the landing page feel less generic.”
+Qwen:  “I’ll inspect the current layout first, then propose a direction.”
+       ├─ reads the relevant files
+       ├─ shows the command/tool activity
+       ├─ makes the change in your workspace
+       └─ reports what changed and what was verified
+```
+
+## 🚀 Quick start
+
+### Requirements
+
+- Windows 10/11
+- Python 3.11+
+- Node.js 20+
+- [Ollama](https://ollama.com/)
+- FFmpeg (needed for video attachments)
+
+### Install and run
 
 ```powershell
-ollama pull qwen3.8:27b
+git clone https://github.com/tekkov/qwen-studio.git
+cd qwen-studio
 npm install
+ollama pull qwen3.8:27b
 npm start
 ```
 
-The desktop app starts a private backend on a fresh loopback port and opens the UI. To use another compatible model, set `QWEN_MODEL` in your environment. The app does not require an API key.
+The app starts a private loopback backend and opens the desktop UI. To use another compatible model, set `QWEN_MODEL` in your environment or copy `.env.example` to `.env`.
 
-Build a portable Windows executable with:
+### Verify the checkout
 
 ```powershell
 npm run check
+npm run audit:release
+```
+
+### Build a portable Windows app
+
+```powershell
 npm run dist
 ```
 
-## Safety
+## 🗺️ How it fits together
 
-The agent and integrated terminal run as your Windows user. They can modify files and execute commands. Use a dedicated project folder and review important changes. Third-party MCP servers are programs installed or launched on your computer; only connect ones you trust. A richer approval system is tracked as active roadmap work.
+```text
+Electron shell
+    │
+    ├─ Qwen Studio UI (HTML/CSS/vanilla JS)
+    │       ├─ General + project chat threads
+    │       ├─ Attachments, terminal, MCPs, Git review
+    │       └─ Live run status + recovery controls
+    │
+    └─ Local Python backend
+            ├─ Ollama chat + tool loop
+            ├─ Persistent local state
+            ├─ PowerShell / filesystem tools
+            └─ Optional Codex supervision
+```
 
-## Documentation
+See [the architecture guide](docs/architecture.md) for storage, request flow, and safety boundaries.
+
+## 🧪 Project status
+
+This is an active open-source project. The core desktop flow is working, and the roadmap is intentionally practical:
+
+- Better approval UX for external and destructive actions
+- More platform support beyond Windows
+- More model/provider adapters
+- Polished onboarding and first-run diagnostics
+- Community-contributed MCP templates and UI improvements
+
+Ideas, bug reports, screenshots, and “this would be cool if…” discussions are very welcome. 🌱
+
+## 🤝 Contributing
+
+Start with [CONTRIBUTING.md](CONTRIBUTING.md), then open an issue or pull request. Small improvements count: documentation, test coverage, accessibility fixes, clearer errors, and delightful UI details are all valuable.
+
+Please include:
+
+1. What user problem does this solve?
+2. What changed and where?
+3. What did you test?
+4. Any safety, privacy, or compatibility tradeoffs?
+
+## 🔐 Safety and privacy
+
+Qwen Studio can read/write files and run PowerShell with the permissions of the Windows user who launched it. Only link folders you intend the model to access, inspect important commands, and treat third-party MCP servers as executable software.
+
+Keep credentials in local environment variables or MCP configuration. Never commit `.env`, tokens, copied attachments, or application data. See [SECURITY.md](SECURITY.md) for the full policy.
+
+## 📚 Docs
 
 - [Setup and troubleshooting](docs/setup.md)
 - [Architecture and storage](docs/architecture.md)
@@ -50,7 +127,8 @@ The agent and integrated terminal run as your Windows user. They can modify file
 - [Privacy and security](docs/privacy-security.md)
 - [Product audit and roadmap](docs/product-audit.md)
 - [Contributing](CONTRIBUTING.md)
+- [Changelog](CHANGELOG.md)
 
-## License
+## 📄 License
 
-[MIT](LICENSE). Qwen and Ollama are separate projects with their own names, software, model, and license terms.
+Qwen Studio is released under the [MIT License](LICENSE). Built with ❤️ for local-first software, curious builders, and people who like knowing what their tools are doing.

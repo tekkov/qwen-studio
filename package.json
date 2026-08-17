@@ -1,6 +1,6 @@
 {
   "name": "qwen-local-agent",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A free, local-first Qwen coding agent desktop app powered by Ollama",
   "author": "Qwen Studio contributors",
   "license": "MIT",
@@ -10,6 +10,7 @@
     "start": "electron .",
     "test": "python -m unittest discover -s tests -v",
     "check": "python -m py_compile server.py && node --check app.js && node --check main.js && node --check preload.js && node --check icons.js && npm test",
+    "audit:release": "python scripts/release_audit.py",
     "smoke:model": "python scripts/smoke_model.py",
     "dist": "electron-builder --win portable"
   },

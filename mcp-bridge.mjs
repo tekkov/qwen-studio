@@ -1,4 +1,4 @@
-import { Client } from '@modelcontextprotocol/client';
+import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const input = await new Promise((resolve, reject) => {
@@ -9,9 +9,11 @@ const input = await new Promise((resolve, reject) => {
 });
 
 const config = input.config;
-if (!config || config.transport !== 'stdio') throw new Error('Only stdio MCP connections are supported by this build.');
+if (!config || !['stdio', 'streamable-http'].includes(config.transport)) throw new Error('Unsupported MCP transport. Choose stdio or Streamable HTTP.');
 
-const transport = new StdioClientTransport({ command: config.command, args: config.args || [], env: { ...process.env, ...(config.env || {}) } });
+const transport = config.transport === 'stdio'
+  ? new StdioClientTransport({ command: config.command, args: config.args || [], env: { ...process.env, ...(config.env || {}) } })
+  : new StreamableHTTPClientTransport(new URL(config.url), { requestInit: { headers: config.headers || {} }, onInsufficientScope: 'throw' });
 const client = new Client({ name: 'qwen-local-agent', version: '1.0.0' });
 
 try {

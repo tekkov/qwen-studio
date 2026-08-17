@@ -9,10 +9,12 @@ const iconPaths = {
   trash: '<path d="M3 6h18M8 6V4h8v2M8 10v8M12 10v8M16 10v8M5 6l1 16h12l1-16"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   terminal: '<path d="m4 17 6-5-6-5M12 19h8"/>',
+  spark: '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="m19 16 .8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
   x: '<path d="M6 6l12 12M18 6 6 18"/>',
   paperclip: '<path d="m21.4 11.6-8.9 8.9a6 6 0 0 1-8.5-8.5l9.4-9.4a4 4 0 0 1 5.7 5.7l-9.5 9.5a2 2 0 0 1-2.8-2.8l8.8-8.8"/>',
   edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4z"/>',
-  archive: '<path d="M3 5h18v4H3zM5 9v11h14V9M10 13h4"/>'
+  archive: '<path d="M3 5h18v4H3zM5 9v11h14V9M10 13h4"/>',
+  pin: '<path d="M9 3h6l1 6 3 3-5 1v7l-2-2-2 2v-7l-5-1 3-3 1-6z"/>'
 };
 
 function renderIcons(root = document) {

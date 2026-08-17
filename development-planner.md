@@ -1,81 +1,55 @@
 # Formatting practices (keep consistent)
 - Use H1 for top-level sections, H2 for subgroups, H3 for task headers.
 - Keep bullets concise; prefer past-tense summaries in Completed, imperative in Current.
-- Include file paths in backticks; avoid line breaks inside bullets unless needed.
+- Include file paths in `backticks`; avoid line breaks inside bullets unless needed.
 - When priorities are empty, note `None` under Current priorities.
 - Add new sessions at the top of Completed with date-stamped headers.
 
 # Current priorities
 
 ## P0 (current)
-
-### P0-01 — Persistent projects and chat threads
-- Add pin/delete controls and preserve completed run summaries across restarts.
-- Verify project switching and the packaged thread experience.
-
-### P0-02 — Multimodal attachments
-- Add document extraction for PDF/DOCX and explicit unsupported-format guidance.
-- Verify size limits and a real video-frame understanding prompt.
-
-### P0-03 — Runtime speed and context efficiency
-- Add output-token controls, queue-time/context-utilization metrics, and higher-quality semantic compaction.
-- Verify cold/warm benchmarks, stalled streams, and duplicate-run protection.
-
-### P0-04 — Product shell and agent transparency
-- Replace blocking alerts and fragile `innerHTML` interpolation with accessible inline feedback and safe DOM rendering.
-- Add markdown/code rendering, copy controls, artifact links, empty/loading/error states, and responsive behavior.
-- Verify: keyboard navigation, reduced motion, narrow layout, long content, error states, and packaged visual smoke test.
-
-### P0-05 — Test and open-source release baseline
-- Expand integration coverage for cancellation, terminal processes, MCP failures, attachment limits, and packaged startup.
-- Add issue templates and release notes, then initialize Git after a final secret scan.
-- Verify: clean clone setup, tests, package build, secret scan, and documentation link audit.
+- None
 
 ## P1 (phase 2)
-
-### P1-01 — Permission and approval model
-- Add read-only, project-write, and full-access profiles with explicit approvals for external, destructive, and network actions.
-- Add a reviewable command/file-change approval surface and durable per-project defaults.
-- Verify: denied path, approved path, destructive action, network action, and MCP write-action tests.
-
-### P1-02 — Git and code review workspace
-- Add repository status, diff inspection, file review, rollback-safe patch previews, and test-result summaries.
-- Add branch and worktree awareness without running destructive Git commands automatically.
-- Verify: clean repo, dirty repo, non-repo folder, multi-repository project, and binary diff states.
-
-### P1-03 — MCP and reusable workflow expansion
-- Add Streamable HTTP MCP, OAuth/bearer configuration, enable/disable controls, tool approval modes, and diagnostics.
-- Add project instruction discovery and reusable local workflow/skill loading.
-- Verify: stdio, HTTP, auth-required, startup failure, timeout, and tool-deny tests.
+- None
 
 ## P2 (future)
 
 ### P2-01 — Browser, computer, and remote execution
 - Add explicitly permissioned browser testing, screenshot feedback, and remote executor architecture.
 - Keep local-only operation as the default and document every optional dependency.
-- Verify: browser unavailable, browser available, permission denied, and remote disconnect states.
+- Verify browser unavailable, browser available, permission denied, and remote disconnect states.
 
 # Completed Action Items
 
+## Session 2026-08-17 (full acceptance audit and release pass)
+- Completed semantic context compaction that preserves system instructions and recent tool facts, with queue wait, context utilization, output-token controls, and unlimited local model output in `server.py`, `app.js`, and `run-status.css`.
+- Completed transparent recovery states with repeated-failure counters, safe blocked escalation, checkpoint persistence, Codex diagnosis hooks, idle-only continuation, configured process detection, and resumable disk-state recovery in `server.py`.
+- Completed visible changed-file review buttons, blocked-state copy, inline notices, safe dynamic DOM rendering, markdown/code copy controls, keyboard-friendly controls, reduced-motion handling, and responsive layout coverage in `app.js`, `index.html`, and CSS files.
+- Completed MCP diagnostics, bearer/OAuth-compatible header metadata, enable/disable controls, stdio/Streamable HTTP support, project workflow discovery, and secret-redacted connection responses in `server.py`, `mcp-bridge.mjs`, and `app.js`.
+- Completed reviewable permissions, project defaults, Git branch/status/diff/file/worktree review, test-result recording, terminal process visibility, and no-automatic-destructive-Git behavior in `server.py` and `app.js`.
+- Completed release hardening with `scripts/release_audit.py`, issue templates, changelog, documentation link checks, secret-pattern scanning, package parity verification, and release guidance in `README.md` and `docs/`.
+- Verified `npm run check` with 31 tests, `npm run audit:release`, planner lint, JavaScript/Python syntax checks, the real `qwen3.8:27b` tool smoke with 20 events and a verified file, and Codex supervisor smoke from the installed authenticated CLI.
+- Verified desktop and narrow browser states: no horizontal overflow at a 390px viewport, 58 focusable controls, reduced-motion rules present, and no browser console warnings or errors.
+- Rebuilt `dist/Qwen Studio 0.4.0.exe`; hashes for packaged `server.py`, `app.js`, `index.html`, `run-status.css`, and `mcp-bridge.mjs` match the source tree. The obsolete `0.3.0` executable remains removed.
+
+## Session 2026-08-17 (Codex supervisor foundation)
+- Completed persistent project-scoped chat organization with switching, pin/archive/rename/delete actions, resumable run summaries, and packaged-source parity.
+- Completed multimodal intake for images, videos, DOCX, PDF detection, size limits, and unsupported-format guidance.
+- Added safe Codex CLI authentication status, `.env` API-key availability detection, redacted supervisor metadata, review budgets, and opt-in supervision.
+- Added persisted job checkpoints, resumable requests, interrupted-job recovery, direct run evidence, artifact/change verification, Autopilot controls, Codex JSONL milestone/failure/final review events, and a non-destructive watchdog.
+- Added read-only Git review, project-write/read-only/full-access profiles, live approval cards, Streamable HTTP MCP configuration, secret-redacted connection cards, low-resource mode, project file review, inline notices, durable per-project permissions, safe pause/resume, MCP enable/disable, Git diff/worktree review, and unlimited output-token settings.
+- Verified the foundation with 26 isolated tests, JavaScript syntax/export checks, and a real read-only Codex supervisor smoke test without exposing credentials.
+
 ## Session 2026-08-17 (agent visibility, steering, and project organization)
-- Added direct always-visible run evidence, streamed agent PowerShell output, live response previews, per-step token/context accounting, and automatic empty-response recovery.
-- Added steerable queued messages plus nested project/chat trees in the sidebar and Projects view, with project manifests grounding every project conversation.
+- Added always-visible run evidence, streamed PowerShell output, live response previews, per-step token/context accounting, automatic empty-response recovery, queued steering, nested project/chat trees, and project manifests.
 - Increased practical context profiles to 32K Fast, 64K Balanced, and 128K Deep while keeping output, run time, and tool steps uncapped.
 - Verified the changes with 12 deterministic tests and syntax checks.
 
 ## Session 2026-08-16 (persistent product foundation and release hardening)
-- Removed automatic model and agent-step limits, enabled unlimited Ollama output, added per-step context trimming with preserved system instructions, and made slow-processing UI states truthful.
-- Added project creation, persistent project-scoped chats, rename/archive controls, model mode persistence, and native thread navigation.
-- Added image, code/text, and video attachment intake with previews, bounded extraction, FFmpeg frame sampling, local storage, and Ollama vision payloads.
-- Added Fast/Balanced/Deep profiles, Ollama capability detection, practical context trimming, first-token timing, prompt processing speed, and generation TPS evidence.
-- Replaced the shared fixed backend port with a fresh per-launch port so new UI builds cannot attach to stale packaged servers.
-- Added eight passing automated tests, a passing real vision test at 4.03 TPS, and passing real coding-agent file-write/read smoke tests.
-- Added MIT licensing, Windows CI, contributor/security guidance, focused documentation, and secret/generated-file ignore rules.
+- Added unlimited Ollama output, context trimming, project creation, persistent project-scoped chats, native thread navigation, image/code/text/video attachments, FFmpeg frame sampling, bounded storage, Fast/Balanced/Deep profiles, Ollama capability detection, TPS evidence, fresh per-launch ports, real vision and coding-agent smoke tests, MIT licensing, Windows CI, contributor/security guidance, and secret/generated-file ignore rules.
 
 ## Session 2026-08-16 (runtime foundation and initial audit)
-- Added tracked background agent runs, streaming activity, cancellation, artifact enforcement, and performance metrics in `server.py` and `app.js`.
-- Added linked local projects, stdio MCP configuration, and a project-scoped integrated PowerShell terminal.
-- Added a verified completion guard and automated agent-loop tests in `tests/test_agent.py`.
+- Added tracked background agent runs, streaming activity, cancellation, artifact enforcement, linked local projects, stdio MCP configuration, integrated PowerShell terminal, verified completion guards, and automated agent-loop tests.
 - Verified the real `qwen3.8:27b` model can write, list, read, and confirm a file before completing a task.
-- Audited the installed model as a 27.3B Q4_K_M vision/tool/thinking model with native 262,144-token context.
-- Identified missing persistence, multimodal intake, approvals, Git review, release automation, and open-source documentation as product blockers.
+- Audited the installed model as a 27.3B Q4 vision/tool/thinking model with native 262,144-token context and identified the persistence, multimodal, approval, Git, release, and documentation work that followed.
