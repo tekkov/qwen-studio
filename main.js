@@ -11,6 +11,7 @@ let restartTimer;
 let quitting = false;
 let port;
 let logPath;
+let ollamaProcess;
 function log(message) { try { if (logPath) fs.appendFileSync(logPath, `${new Date().toISOString()} ${message}\n`); } catch (_) {} }
 
 function runtimeRoot() {
@@ -41,6 +42,62 @@ function localEnvironment() {
     } catch (_) {}
   }
   return values;
+}
+
+function ollamaCommand() {
+  const configured = process.env.OLLAMA_COMMAND;
+  if (configured && fs.existsSync(configured)) return configured;
+  const candidates = [
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Ollama', 'ollama.exe'),
+    path.join(process.env.ProgramFiles || '', 'Ollama', 'ollama.exe'),
+    'ollama'
+  ];
+  return candidates.find(candidate => candidate === 'ollama' || fs.existsSync(candidate)) || null;
+}
+
+function ollamaRequest(pathname, payload = null, timeout = 5000) {
+  return new Promise((resolve, reject) => {
+    const body = payload == null ? null : Buffer.from(JSON.stringify(payload));
+    const request = http.request({ hostname: '127.0.0.1', port: 11434, path: pathname, method: body ? 'POST' : 'GET', timeout, headers: body ? { 'Content-Type': 'application/json', 'Content-Length': body.length } : {} }, response => {
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
+      response.on('end', () => {
+        if (response.statusCode < 200 || response.statusCode >= 300) { reject(new Error(`Ollama returned HTTP ${response.statusCode}`)); return; }
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { resolve({}); }
+      });
+    });
+    request.on('timeout', () => request.destroy(new Error('Ollama startup timed out.')));
+    request.on('error', reject);
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+async function ensureOllamaRuntime() {
+  const environment = localEnvironment();
+  const model = environment.QWEN_MODEL || process.env.QWEN_MODEL || 'qwen3.8:27b';
+  try {
+    await ollamaRequest('/api/tags');
+  } catch {
+    const command = ollamaCommand();
+    if (!command) { log('Ollama was not found. Install Ollama or set OLLAMA_COMMAND.'); return; }
+    log(`starting Ollama from ${command}`);
+    try {
+      ollamaProcess = spawn(command, ['serve'], { windowsHide: true, detached: true, stdio: 'ignore', env: { ...environment, ...process.env } });
+      ollamaProcess.unref();
+    } catch (error) { log(`Ollama startup failed: ${error.message}`); return; }
+    for (let attempt = 0; attempt < 60; attempt++) {
+      try { await ollamaRequest('/api/tags', null, 1500); break; } catch { await new Promise(resolve => setTimeout(resolve, 500)); }
+    }
+  }
+  try {
+    const tags = await ollamaRequest('/api/tags');
+    const installed = (tags.models || []).some(item => item.name === model || item.model === model);
+    if (!installed) { log(`Ollama is ready, but model ${model} is not installed.`); return; }
+    log(`warming Ollama model ${model}`);
+    await ollamaRequest('/api/generate', { model, prompt: 'Ready.', stream: false, keep_alive: '30m', options: { num_predict: 1 } }, 180000);
+    log(`Ollama model ${model} is warm`);
+  } catch (error) { log(`Ollama model preflight skipped: ${error.message}`); }
 }
 
 function isReady() {
@@ -114,6 +171,7 @@ async function createWindow() {
   logPath = path.join(app.getPath('userData'), 'qwen-startup.log');
   log('desktop app ready');
   try {
+    await ensureOllamaRuntime();
     await startServer();
   } catch (error) {
     log(`startup failure: ${error.stack || error.message}`);

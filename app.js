@@ -51,7 +51,8 @@ async function loadStatus() {
     $('#settings-runtime').textContent = data.runtime?.available ? 'Connected' : 'Offline';
     $('#settings-capabilities').textContent = (data.runtime?.capabilities || []).join(', ') || 'Not reported';
     $('#settings-native-context').textContent = data.runtime?.nativeContext ? `${Number(data.runtime.nativeContext).toLocaleString()} tokens` : 'Not reported';
-    setConnected(true);
+    setConnected(Boolean(data.runtime?.available));
+    if (!data.runtime?.available) showNotice(`Ollama is not ready for ${data.model}. Start Ollama and make sure that model is installed.`, 'error');
     refreshRecoveryJobs();
   } catch { setConnected(false); }
 }
