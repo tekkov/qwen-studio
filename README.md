@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/tekkov/qwen-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/tekkov/qwen-studio/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
-[![Platform: Windows](https://img.shields.io/badge/platform-Windows-0078D6.svg)](#requirements)
+[![Platforms: Windows, macOS, Linux](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-4c8bf5.svg)](#requirements)
 [![Powered by Ollama](https://img.shields.io/badge/powered%20by-Ollama-black.svg)](https://ollama.com/)
 
 Qwen Studio turns a local Qwen model into a friendly, transparent coding partner. Chat normally, organize work into projects, inspect live tool activity, use a real terminal, connect MCP servers, and keep your files on your own machine. 🏠🔒
@@ -14,12 +14,12 @@ No hosted AI account is required for normal local work. No mystery cloud sync. N
 ## ✨ What makes it fun
 
 - 💬 **General chats + project chats** — brainstorm freely or give a conversation a dedicated folder.
-- 🛠️ **Real computer tools** — read/write files, run PowerShell, inspect Git, and review changed files.
+- 🛠️ **Real computer tools** — read/write files, run native shell commands, inspect Git, and review changed files.
 - 👀 **Receipts, not vibes** — live phases, commands, process IDs, output, approvals, checkpoints, and final status.
 - 🧭 **Three response modes** — Fast, Balanced, and Deep profiles for different kinds of work.
 - 📎 **Multimodal intake** — attach source files, text, images, and videos for Qwen to inspect.
 - 🔌 **MCP-ready** — connect local stdio or Streamable HTTP MCP servers.
-- 🖥️ **Integrated terminal** — a project-aware PowerShell terminal lives where the work happens.
+- 🖥️ **Integrated terminal** — a project-aware native shell lives where the work happens.
 - 🧯 **Recoverable by design** — pause, stop, resume, steer, and safely surface blocked work.
 - 🤖 **Optional Autopilot** — Codex can review milestones and failures while Qwen remains the primary worker.
 
@@ -40,15 +40,16 @@ Qwen:  “I’ll inspect the current layout first, then propose a direction.”
 
 ### Requirements
 
-- Windows 10/11
+- Windows 10/11, macOS 12+, or a current Linux distribution
 - Python 3.11+
 - Node.js 20+
+- Rust stable and the platform's Tauri prerequisites
 - [Ollama](https://ollama.com/)
 - FFmpeg (needed for video attachments)
 
 ### Install and run
 
-```powershell
+```bash
 git clone https://github.com/tekkov/qwen-studio.git
 cd qwen-studio
 npm install
@@ -65,16 +66,18 @@ npm run check
 npm run audit:release
 ```
 
-### Build a portable Windows app
+### Build an installer for the current operating system
 
-```powershell
+```bash
 npm run dist
 ```
+
+The Tauri build produces native bundles for the operating system on which it runs: Windows installers, a macOS application/DMG, or Linux packages. Build each target on its native runner (or use the included CI matrix); macOS signing/notarization still requires Apple credentials.
 
 ## 🗺️ How it fits together
 
 ```text
-Electron shell
+Tauri shell
     │
     ├─ Qwen Studio UI (HTML/CSS/vanilla JS)
     │       ├─ General + project chat threads
@@ -84,7 +87,7 @@ Electron shell
     └─ Local Python backend
             ├─ Ollama chat + tool loop
             ├─ Persistent local state
-            ├─ PowerShell / filesystem tools
+            ├─ Native shell / filesystem tools
             └─ Optional Codex supervision
 ```
 
@@ -95,7 +98,7 @@ See [the architecture guide](docs/architecture.md) for storage, request flow, an
 This is an active open-source project. The core desktop flow is working, and the roadmap is intentionally practical:
 
 - Better approval UX for external and destructive actions
-- More platform support beyond Windows
+- Signed and notarized release automation
 - More model/provider adapters
 - Polished onboarding and first-run diagnostics
 - Community-contributed MCP templates and UI improvements
@@ -115,7 +118,7 @@ Please include:
 
 ## 🔐 Safety and privacy
 
-Qwen Studio can read/write files and run PowerShell with the permissions of the Windows user who launched it. Only link folders you intend the model to access, inspect important commands, and treat third-party MCP servers as executable software.
+Qwen Studio can read/write files and run native shell commands with the permissions of the user who launched it. Only link folders you intend the model to access, inspect important commands, and treat third-party MCP servers as executable software.
 
 Keep credentials in local environment variables or MCP configuration. Never commit `.env`, tokens, copied attachments, or application data. See [SECURITY.md](SECURITY.md) for the full policy.
 

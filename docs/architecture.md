@@ -2,7 +2,7 @@
 
 Qwen Studio is a small local desktop stack:
 
-1. Electron owns the native window, file/folder pickers, and a fresh loopback port.
+1. Tauri owns the native window, file/folder pickers, and the bundled Python process.
 2. The Python HTTP server owns persistent state, the agent loop, terminal processes, attachments, and Ollama requests.
 3. Ollama runs the selected Qwen model and streams content, thinking, tool calls, and performance counters.
 4. The MCP bridge launches configured stdio servers and maps their tools into Ollama's function-calling format.
@@ -13,13 +13,13 @@ Qwen Studio is a small local desktop stack:
 - **Thread:** a project-scoped persistent conversation with title, mode, timestamps, and ordered messages.
 - **Job:** a persisted agent run with plain-language events, detailed tool evidence, metrics, checkpoints, resumable request state, stop/recovery state, supervisor findings, and artifacts.
 - **Attachment:** a copied immutable input. Text is bounded to 120,000 characters; images are base64-encoded for Ollama; videos are sampled to at most eight 1280-pixel-wide JPEG frames.
-- **Terminal run:** a PowerShell process, output buffer, PID, status, and stop state scoped to the active project.
+- **Terminal run:** a native shell process, output buffer, PID, status, and stop state scoped to the active project.
 
-Metadata is currently versioned JSON under `%APPDATA%\QwenLocalAgent`; attachments live below its `attachments` directory. Threads, attachments, and jobs use lock-protected atomic replacement. Interrupted jobs are restored as resumable checkpoints; completed tool actions are not replayed automatically.
+Metadata is versioned JSON under the platform's normal application-data directory (`%APPDATA%` on Windows, `~/Library/Application Support` on macOS, and `$XDG_DATA_HOME`/`~/.local/share` on Linux); attachments live below its `attachments` directory. Threads, attachments, and jobs use lock-protected atomic replacement. Interrupted jobs are restored as resumable checkpoints; completed tool actions are not replayed automatically.
 
 ## Agent loop
 
-The server sends the system instructions, trimmed conversation, built-in tools, and connected MCP tools to `/api/chat`. Tool steps and model output are uncapped. Build requests cannot complete until a real artifact has been observed, and empty final answers are rejected. Tool results become direct run events with commands, process IDs, streamed PowerShell output, live response previews, and per-step token evidence.
+The server sends the system instructions, trimmed conversation, built-in tools, and connected MCP tools to `/api/chat`. Tool steps and model output are uncapped. Build requests cannot complete until a real artifact has been observed, and empty final answers are rejected. Tool results become direct run events with commands, process IDs, streamed shell output, live response previews, and per-step token evidence.
 
 Every turn includes a bounded top-level project manifest plus excerpts from key project files such as `AGENTS.md`, `README.md`, and `package.json`. Project-specific questions instruct Qwen to inspect authoritative files before answering. Messages sent during an active run stop the current model turn, enter a visible steering queue, and continue in order against the current on-disk project state.
 

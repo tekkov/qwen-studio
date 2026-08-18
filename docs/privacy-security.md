@@ -6,7 +6,7 @@ Attachments are copied into local application data. Deleting an attachment remov
 
 ## Current trust boundary
 
-Built-in file and PowerShell tools run with the same Windows permissions as the person who launched the app. The current release does not yet pause each write or command for approval.
+Built-in file and native shell tools run with the same permissions as the person who launched the app. The current release does not yet pause each write or command for approval.
 
 - Use dedicated project folders and source control.
 - Do not run the app elevated.

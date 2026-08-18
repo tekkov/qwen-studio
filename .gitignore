@@ -3,6 +3,8 @@
 !.env.example
 node_modules/
 dist/
+frontend-dist/
+src-tauri/target/
 __pycache__/
 *.py[cod]
 .pytest_cache/

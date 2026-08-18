@@ -19,7 +19,7 @@ Describe what you expected and what occurred.
 
 - Qwen Studio version:
 - Ollama model:
-- Windows version:
+- Operating system and version:
 - Fast/Balanced/Deep mode:
 - Autopilot enabled: yes/no
 

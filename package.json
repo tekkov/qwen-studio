@@ -4,29 +4,21 @@
   "description": "A free, local-first Qwen coding agent desktop app powered by Ollama",
   "author": "Qwen Studio contributors",
   "license": "MIT",
-  "keywords": ["qwen", "ollama", "coding-agent", "mcp", "electron"],
-  "main": "main.js",
+  "keywords": ["qwen", "ollama", "coding-agent", "mcp", "tauri"],
   "scripts": {
-    "start": "electron .",
+    "frontend:build": "node scripts/prepare_frontend.mjs",
+    "start": "tauri dev",
     "test": "python -m unittest discover -s tests -v",
-    "check": "python -m py_compile server.py && node --check app.js && node --check main.js && node --check preload.js && node --check icons.js && npm test",
+    "check": "python -m py_compile server.py && node --check app.js && node --check icons.js && npm test",
     "audit:release": "python scripts/release_audit.py",
     "smoke:model": "python scripts/smoke_model.py",
-    "dist": "electron-builder --win portable"
+    "dist": "tauri build"
   },
   "devDependencies": {
-    "electron": "^36.3.2",
-    "electron-builder": "^26.0.12"
+    "@tauri-apps/cli": "^2.6.0"
   },
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0"
   },
-  "build": {
-    "appId": "local.qwen.studio",
-    "productName": "Qwen Studio",
-    "asar": true,
-    "asarUnpack": ["server.py", "mcp-bridge.mjs", "index.html", "*.css", "icons.js", "app.js", "qwen-studio-icon.png"],
-    "files": ["main.js", "preload.js", "server.py", "mcp-bridge.mjs", "index.html", "style.css", "run-status.css", "projects.css", "project-tree.css", "terminal.css", "product-shell.css", "icons.js", "app.js", "qwen-studio-icon.png", "qwen-studio-icon.ico", "README.md", "LICENSE", "SECURITY.md", "docs/**/*", ".env.example"],
-    "win": { "target": ["portable"], "icon": "qwen-studio-icon.ico" }
-  }
+  "build": {}
 }

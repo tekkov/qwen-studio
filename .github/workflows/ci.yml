@@ -9,9 +9,10 @@ permissions:
 
 jobs:
   verify:
-    # The product and its integration tests are Windows-first: PowerShell is
-    # part of the supported local toolchain, so verify on the real target OS.
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Check out the code 📦
         uses: actions/checkout@v4
@@ -26,5 +27,12 @@ jobs:
           cache: npm
       - name: Install JavaScript dependencies
         run: npm ci
+      - name: Set up Rust 🦀
+        uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
       - name: Run syntax checks and tests ✅
         run: npm run check
+      - name: Validate Tauri build
+        run: npm run dist

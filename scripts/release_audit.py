@@ -4,7 +4,7 @@ import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-EXCLUDED = {".git", "node_modules", "dist", ".venv", "__pycache__"}
+EXCLUDED = {".git", "node_modules", "dist", "frontend-dist", "target", ".venv", "__pycache__"}
 SECRET_PATTERNS = [
     re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"),
     re.compile(r"(?i)(OPENAI_API_KEY|CODEX_API_KEY)\s*=\s*[^\s<$][^\r\n]*"),
@@ -38,7 +38,7 @@ def main():
                 continue
             if not (ROOT / target).exists():
                 errors.append(f"Broken README link: {target}")
-    required = ["server.py", "index.html", "app.js", "main.js", "preload.js", "mcp-bridge.mjs", "LICENSE", ".env.example"]
+    required = ["server.py", "index.html", "app.js", "tauri-bridge.js", "src-tauri/tauri.conf.json", "mcp-bridge.mjs", "LICENSE", ".env.example"]
     errors.extend(f"Missing release file: {item}" for item in required if not (ROOT / item).exists())
     if errors:
         print("Release audit failed:")

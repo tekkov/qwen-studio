@@ -27,7 +27,7 @@
     <section class="surface">
       <div class="topbar"><div class="topbar-context"><div class="breadcrumb" id="breadcrumb">Chats</div><span class="active-project-name" id="active-project-name">No project</span></div><div class="topbar-actions"><button class="terminal-toggle" id="terminal-toggle" type="button" title="Toggle terminal (Ctrl + `)" aria-expanded="false"><span data-icon="terminal"></span><span>Terminal</span></button><button class="supervisor-toggle" id="supervisor-toggle" type="button" title="Toggle Codex supervision"><span data-icon="spark"></span><span id="supervisor-toggle-label">Autopilot off</span></button><div class="model-select"><span id="model">qwen3.8:27b</span><button id="mode" title="Response mode">Fast</button></div></div></div>
       <section class="view chat-view active" id="chat-view">
-        <div class="chat-thread" id="messages"><div class="empty-chat" id="intro"><div class="empty-mark">Q</div><h1>What are we working on?</h1><p>Qwen is running on this computer. It can reason, work with files, use PowerShell, and call your connected MCP tools.</p><div class="starter-grid"><button class="starter">Review this project and tell me where to start</button><button class="starter">Build a feature from a short description</button><button class="starter">Find and fix a bug in my code</button><button class="starter">Set up a new MCP connection</button></div></div></div>
+        <div class="chat-thread" id="messages"><div class="empty-chat" id="intro"><div class="empty-mark">Q</div><h1>What are we working on?</h1><p>Qwen is running on this computer. It can reason, work with files, use the native shell, and call your connected MCP tools.</p><div class="starter-grid"><button class="starter">Review this project and tell me where to start</button><button class="starter">Build a feature from a short description</button><button class="starter">Find and fix a bug in my code</button><button class="starter">Set up a new MCP connection</button></div></div></div>
         <form class="composer" id="composer"><div class="attachment-tray" id="attachment-tray" hidden></div><textarea id="prompt" rows="1" aria-label="Message Qwen" autocomplete="off" spellcheck="true" placeholder="Message Qwen"></textarea><div class="composer-bar"><div><button class="tool-toggle attachment-button" id="attach-files" type="button"><span data-icon="paperclip"></span>Attach</button><button class="tool-toggle" type="button" data-view="workspace">Workspace</button><button class="tool-toggle" type="button" data-view="mcps">MCP tools</button></div><button class="send" id="send" type="submit" aria-label="Send message">Send</button></div></form>
         <p class="disclaimer">Qwen can use local tools in this session. Review important file or system changes.</p>
       </section>
@@ -37,11 +37,20 @@
       <section class="app-notice" id="app-notice" hidden role="status" aria-live="polite"></section><section class="recovery-banner" id="recovery-banner" hidden aria-live="polite"></section>
       <section class="terminal-panel" id="terminal-panel" aria-label="Project terminal" hidden>
         <header class="terminal-head"><div><span data-icon="terminal"></span><strong>Terminal</strong><code id="terminal-path">Project workspace</code></div><div><span class="terminal-status" id="terminal-status">Ready</span><button type="button" id="terminal-stop" hidden>Stop</button><button type="button" id="terminal-clear">Clear</button><button class="terminal-close" type="button" id="terminal-close" aria-label="Close terminal" data-icon="x"></button></div></header>
-        <pre class="terminal-output" id="terminal-output" tabindex="0"><span class="terminal-welcome">PowerShell is ready. Commands run inside the active project folder.</span></pre>
-        <form class="terminal-form" id="terminal-form"><span>PS</span><input id="terminal-input" autocomplete="off" spellcheck="false" aria-label="PowerShell command" placeholder="Enter a command…" /><button type="submit">Run</button></form>
+        <pre class="terminal-output" id="terminal-output" tabindex="0"><span class="terminal-welcome">The native shell is ready. Commands run inside the active project folder.</span></pre>
+        <form class="terminal-form" id="terminal-form"><span>$</span><input id="terminal-input" autocomplete="off" spellcheck="false" aria-label="Shell command" placeholder="Enter a command…" /><button type="submit">Run</button></form>
       </section>
     </section>
   </main>
+  <script>
+    window.QWEN_API_BASE = window.__TAURI__ ? 'http://127.0.0.1:8000' : '';
+    const qwenFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (typeof input === 'string' && input.startsWith('/api/')) input = window.QWEN_API_BASE + input;
+      return qwenFetch(input, init);
+    };
+  </script>
+  <script src="/tauri-bridge.js"></script>
   <script src="/icons.js"></script>
   <script src="/app.js"></script>
 </body>

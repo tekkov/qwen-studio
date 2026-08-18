@@ -6,9 +6,11 @@ import mimetypes
 import os
 import queue
 import re
+import signal
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -24,7 +26,14 @@ ROOT = Path(__file__).parent
 HOST, PORT = "127.0.0.1", int(os.getenv("QWEN_PORT", "8000"))
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 MODEL = os.getenv("QWEN_MODEL", "qwen3.8:27b")
-DATA_DIR = Path(os.getenv("QWEN_DATA_DIR") or (Path(os.getenv("APPDATA", ROOT)) / "QwenLocalAgent"))
+def user_data_dir():
+    override = os.getenv("QWEN_DATA_DIR")
+    if override: return Path(override)
+    if os.name == "nt": return Path(os.getenv("APPDATA", ROOT)) / "QwenLocalAgent"
+    if sys.platform == "darwin": return Path(os.getenv("HOME", ROOT)) / "Library" / "Application Support" / "QwenLocalAgent"
+    return Path(os.getenv("XDG_DATA_HOME", Path(os.getenv("HOME", ROOT)) / ".local" / "share")) / "QwenLocalAgent"
+
+DATA_DIR = user_data_dir()
 MCP_FILE = DATA_DIR / "mcp.json"
 PROJECTS_FILE = DATA_DIR / "projects.json"
 THREADS_FILE = DATA_DIR / "threads.json"
@@ -47,6 +56,20 @@ THREADS_LOCK = threading.RLock()
 ATTACHMENTS_LOCK = threading.RLock()
 MODEL_INFO_CACHE = {"at": 0, "value": None}
 CODEX_STATUS_CACHE = {"at": 0, "value": None}
+
+def shell_command(command):
+    """Return the platform's native interactive shell invocation."""
+    if os.name == "nt": return ["powershell", "-NoLogo", "-NoProfile", "-Command", command]
+    return [os.getenv("SHELL", "/bin/sh"), "-lc", command]
+
+def stop_process(process):
+    if not process or process.poll() is not None: return
+    if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10)
+    else: process.terminate()
+
+def stop_process_id(process_id):
+    if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process_id), "/T", "/F"], capture_output=True, timeout=10)
+    else: os.kill(int(process_id), signal.SIGTERM)
 
 SUPERVISOR_DEFAULTS = {
     "enabled": False,
@@ -90,7 +113,7 @@ VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
 TEXT_EXTENSIONS = {".txt", ".md", ".json", ".jsonl", ".csv", ".tsv", ".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".html", ".css", ".scss", ".xml", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".log", ".sql", ".sh", ".ps1", ".bat", ".java", ".c", ".cpp", ".h", ".hpp", ".rs", ".go", ".rb", ".php", ".swift", ".kt"}
 DOCUMENT_EXTENSIONS = {".pdf", ".docx"}
 
-SYSTEM = """You are Qwen, a local coding agent running on Windows. Work as a careful, capable collaborator: inspect before changing, explain important decisions, use tools when useful, and verify your work. You have local filesystem and PowerShell tools, plus any connected MCP tools. Never claim a tool action succeeded unless its result confirms it.
+SYSTEM = """You are Qwen, a local coding agent running on the user's computer. Work as a careful, capable collaborator: inspect before changing, explain important decisions, use tools when useful, and verify your work. You have local filesystem and native shell tools, plus any connected MCP tools. Never claim a tool action succeeded unless its result confirms it.
 
 Execution rules:
 - When the user asks you to create, build, implement, change, or fix something, perform the work with tools. Do not merely describe steps or paste the intended artifact into chat.
@@ -104,10 +127,10 @@ Execution rules:
 - Final answers must be structured as: What I did; Files changed (or “No files changed”); Verification; Remaining issues or next step. Keep internal chain-of-thought private and report observable actions and evidence instead."""
 
 BUILT_IN_TOOLS = [
-    {"type": "function", "function": {"name": "list_files", "description": "List files and folders at a Windows path.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
-    {"type": "function", "function": {"name": "read_file", "description": "Read a text file at a Windows path.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "list_files", "description": "List files and folders at a local path.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
+    {"type": "function", "function": {"name": "read_file", "description": "Read a text file at a local path.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
     {"type": "function", "function": {"name": "write_file", "description": "Create or replace a text file with exact content.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}},
-    {"type": "function", "function": {"name": "run_command", "description": "Run a PowerShell command as the current Windows user and return its output.", "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
+    {"type": "function", "function": {"name": "run_command", "description": "Run a native shell command as the current user and return its output.", "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
     {"type": "function", "function": {"name": "get_terminal_output", "description": "Read the latest output and status from the app's integrated project terminal.", "parameters": {"type": "object", "properties": {}}}},
     {"type": "function", "function": {"name": "get_git_status", "description": "Inspect the current Git branch, changed files, and diff summary without changing repository state.", "parameters": {"type": "object", "properties": {}}}}
 ]
@@ -239,7 +262,7 @@ def tool_approval_requirement(name, arguments, workspace, profile):
         command = str(arguments.get("command", "")); lower = command.lower()
         destructive = re.search(r"\b(remove-item|del\s|erase\s|rmdir\s|format-\w+|git\s+(reset|checkout|clean|restore)|stop-process|taskkill)\b", lower)
         network = re.search(r"\b(invoke-webrequest|invoke-restmethod|curl\s|wget\s|iwr\s|irm\s|start-bitstransfer|git\s+(clone|fetch|pull|push)|npm\s+(install|i|ci)|pip\s+install)\b", lower)
-        if profile == "read-only": return {"reason": "This session is read-only, so running a computer command needs your approval.", "action": "Run a PowerShell command", "command": redact_text(command)}
+        if profile == "read-only": return {"reason": "This session is read-only, so running a computer command needs your approval.", "action": "Run a shell command", "command": redact_text(command)}
         if destructive: return {"reason": "This potentially destructive command can delete, reset, stop, or otherwise change existing computer state.", "action": "Run a potentially destructive command", "command": redact_text(command)}
         if network: return {"reason": "This command connects to an external service or downloads data.", "action": "Run a network command", "command": redact_text(command)}
     if name.startswith("mcp__"):
@@ -645,7 +668,7 @@ def run_tool(name, arguments, mcp_mapping, workspace):
         target.write_text(arguments.get("content", ""), encoding="utf-8")
         return f"Wrote {target}"
     if name == "run_command":
-        result = subprocess.run(["powershell", "-NoProfile", "-Command", arguments.get("command", "")], cwd=workspace, capture_output=True, text=True, timeout=900)
+        result = subprocess.run(shell_command(arguments.get("command", "")), cwd=workspace, capture_output=True, text=True, timeout=900)
         return f"exit_code={result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"[-12000:]
     if name == "get_terminal_output":
         with TERMINAL_LOCK:
@@ -656,13 +679,13 @@ def run_tool(name, arguments, mcp_mapping, workspace):
     return f"Unknown tool: {name}"
 
 def run_command_streamed(command, workspace, job):
-    """Run agent PowerShell with live, bounded output events and cancellation."""
+    """Run the native shell with live, bounded output events and cancellation."""
     process = subprocess.Popen(
-        ["powershell", "-NoLogo", "-NoProfile", "-Command", command], cwd=workspace,
+        shell_command(command), cwd=workspace,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1,
     )
     lower_process_priority(process)
-    add_job_event(job, "process", f"PowerShell started process {process.pid} in {workspace}.", {"Process ID": process.pid, "Working folder": str(workspace), "Command": redact_text(command)})
+    add_job_event(job, "process", f"Shell started process {process.pid} in {workspace}.", {"Process ID": process.pid, "Working folder": str(workspace), "Command": redact_text(command)})
     lines = queue.Queue()
     def read_output():
         try:
@@ -677,18 +700,17 @@ def run_command_streamed(command, workspace, job):
         if line is None: reader_done = True
         elif line:
             output.append(line); pending.append(line.rstrip())
-            update_job_activity(job, "tool", f"PowerShell process {process.pid} is running: {line.strip()[:180]}", processId=process.pid, lastCommandOutput=line.strip()[:500])
+            update_job_activity(job, "tool", f"Shell process {process.pid} is running: {line.strip()[:180]}", processId=process.pid, lastCommandOutput=line.strip()[:500])
         if pending and (time.time() - last_event >= 0.8 or len(pending) >= 8 or (process.poll() is not None and reader_done)):
             preview = redact_text("\n".join(pending))[-2000:]
-            add_job_event(job, "process_output", f"PowerShell output: {preview}", {"Process ID": process.pid})
+            add_job_event(job, "process_output", f"Shell output: {preview}", {"Process ID": process.pid})
             pending.clear(); last_event = time.time()
         if job.get("cancelRequested") and process.poll() is None:
-            if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10)
-            else: process.terminate()
+            stop_process(process)
     exit_code = process.wait()
     if pending:
         preview = redact_text("\n".join(pending))[-2000:]
-        add_job_event(job, "process_output", f"PowerShell output: {preview}", {"Process ID": process.pid})
+        add_job_event(job, "process_output", f"Shell output: {preview}", {"Process ID": process.pid})
     text = "".join(output)
     if re.search(r"(?i)(npm\s+(run\s+)?test|pytest|python\s+-m\s+unittest|cargo\s+test|dotnet\s+test)", command):
         job.setdefault("metrics", {}).setdefault("testResults", []).append({"command": redact_text(command), "exitCode": exit_code, "passed": exit_code == 0, "at": time.time()})
@@ -758,7 +780,7 @@ def verification_snapshot(job, workspace):
     artifact_checks = []
     for artifact in job.get("artifacts", []):
         if artifact.startswith("Files created by"):
-            artifact_checks.append({"artifact": artifact, "exists": True, "reason": "PowerShell reported a scaffolding action."})
+            artifact_checks.append({"artifact": artifact, "exists": True, "reason": "The shell reported a scaffolding action."})
             continue
         path = resolve_workspace_path(artifact, workspace)
         artifact_checks.append({"artifact": artifact, "exists": path.is_file() or path.is_dir()})
@@ -910,7 +932,7 @@ def run_terminal_command(run_id, command, workspace):
     run = TERMINAL_RUNS[run_id]
     try:
         process = subprocess.Popen(
-            ["powershell", "-NoLogo", "-NoProfile", "-Command", command],
+            shell_command(command),
             cwd=workspace,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -1072,8 +1094,8 @@ def describe_tool(name, arguments):
         elif "npm run build" in lower: explanation = "Building the project to check that the production version compiles successfully."
         elif "npm test" in lower or "pytest" in lower: explanation = "Running automated tests to check the work."
         elif "git" in lower: explanation = "Using Git to inspect or update the project’s version history."
-        else: explanation = "Running a PowerShell command needed for the current task."
-        return explanation, {"Component": "PowerShell", "Action": "Run command", "Command": command}
+        else: explanation = "Running a shell command needed for the current task."
+        return explanation, {"Component": "Shell", "Action": "Run command", "Command": command}
     if name == "get_terminal_output":
         return "Checking the integrated terminal to see what the latest command is doing.", {"Component": "Integrated terminal", "Action": "Read latest output"}
     if name == "get_git_status":
@@ -1098,7 +1120,7 @@ def describe_tool_result(name, arguments, output, ok):
         preview = redact_text(output.split("STDOUT:\n", 1)[-1].split("STDERR:\n", 1)[0]).strip()[:1200]
         detail = {"Result": "Success" if exit_code == "0" else "Command finished", "Exit code": exit_code}
         if preview: detail["Output preview"] = preview
-        return f"PowerShell finished with exit code {exit_code}. Qwen can now inspect the result and choose the next action.", detail
+        return f"The shell finished with exit code {exit_code}. Qwen can now inspect the result and choose the next action.", detail
     if name == "get_terminal_output":
         return "The latest integrated terminal output was returned to Qwen.", {"Result": "Success", "Output preview": redact_text(output)[:1200]}
     if name == "get_git_status":
@@ -1122,7 +1144,7 @@ def run_agent_job(job_id, incoming):
             job.setdefault("metrics", {})["queueWaitSeconds"] = round(max(0, time.time() - job.get("createdAt", time.time())), 2)
         threading.Thread(target=job_watchdog, args=(job, workspace, watchdog_stop), daemon=True).start()
         project = active_project()
-        add_job_event(job, "setup", "Opening the active project and checking which computer tools and MCP connections Qwen can use.", {"Project": project["name"] if project else "Qwen Studio folder", "Working folder": str(workspace), "Built-in tools": "Read files, write files, list folders, PowerShell", "MCP connections": len(load_mcps())})
+        add_job_event(job, "setup", "Opening the active project and checking which computer tools and MCP connections Qwen can use.", {"Project": project["name"] if project else "Qwen Studio folder", "Working folder": str(workspace), "Built-in tools": "Read files, write files, list folders, native shell", "MCP connections": len(load_mcps())})
         if requires_artifacts:
             add_job_event(job, "plan", "Plan: inspect the relevant files, make the requested code change, run a focused verification, then report the exact files changed.", {"Implementation task": "Yes", "Next": "Inspect before editing"})
         else:
@@ -1131,7 +1153,7 @@ def run_agent_job(job_id, incoming):
         mcp_tools, mcp_mapping = connected_mcp_tools()
         if mcp_tools: add_job_event(job, "mcp", f"Loaded {len(mcp_tools)} MCP tool{'s' if len(mcp_tools) != 1 else ''}.")
         snapshot = project_context_snapshot(workspace)
-        workspace_prompt = f"\n\nThe active project folder is: {workspace}. Resolve relative file paths and PowerShell work inside this folder. Use the following real project snapshot as orientation, then inspect relevant files with tools before making project-specific claims.\n\n{snapshot}"
+        workspace_prompt = f"\n\nThe active project folder is: {workspace}. Resolve relative file paths and shell work inside this folder. Use the following real project snapshot as orientation, then inspect relevant files with tools before making project-specific claims.\n\n{snapshot}"
         conversation = [{"role": "system", "content": SYSTEM + workspace_prompt}] + messages
         run_codex_supervisor(job, "kickoff", workspace, str(messages[-1].get("content", "")))
         profile = PROFILES.get(mode, PROFILES["fast"])
@@ -1227,7 +1249,7 @@ def run_agent_job(job_id, incoming):
                     run_codex_supervisor(job, "failure diagnosis", workspace, f"Qwen tool {name} failed with: {output[-3000:]}")
                 conversation.append({"role": "tool", "content": output})
                 if ok and (name == "write_file" or (name == "run_command" and command_creates_artifacts(args.get("command", "")))):
-                    artifact = args.get("path") if name == "write_file" else "Files created by PowerShell scaffolding command"
+                    artifact = args.get("path") if name == "write_file" else "Files created by a shell scaffolding command"
                     with JOBS_LOCK:
                         if artifact not in job["artifacts"]: job["artifacts"].append(artifact)
                         job.setdefault("metrics", {})["artifactsCreated"] = len(job["artifacts"])
@@ -1273,7 +1295,9 @@ class Handler(BaseHTTPRequestHandler):
         return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)) or 0))
     def send_json(self, status, payload):
         body = json.dumps(payload).encode("utf-8")
-        self.send_response(status); self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        self.send_response(status); self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Access-Control-Allow-Headers", "Content-Type"); self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def do_OPTIONS(self):
+        self.send_response(204); self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Access-Control-Allow-Headers", "Content-Type"); self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"); self.end_headers()
     def send_file(self, path, content_type):
         data = Path(path).read_bytes(); self.send_response(200); self.send_header("Content-Type", content_type); self.send_header("Content-Length", str(len(data))); self.send_header("Cache-Control", "private, max-age=3600"); self.end_headers(); self.wfile.write(data)
     def do_GET(self):
@@ -1551,7 +1575,7 @@ class Handler(BaseHTTPRequestHandler):
                 try: response.close()
                 except Exception: pass
             if supervisor_pid:
-                try: subprocess.run(["taskkill", "/PID", str(supervisor_pid), "/T", "/F"], capture_output=True, timeout=10)
+                try: stop_process_id(supervisor_pid)
                 except Exception: pass
             with APPROVAL_LOCK:
                 condition = APPROVAL_CONDITIONS.get(job_id)
@@ -1569,7 +1593,7 @@ class Handler(BaseHTTPRequestHandler):
                 if run: run["stopRequested"] = True
             if not run: self.send_json(404, {"error": "Terminal command not found."}); return
             if process and process.poll() is None:
-                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10)
+                stop_process(process)
             self.send_json(200, {"stopping": True}); return
         if route.startswith("/api/projects/"):
             identifier = unquote(route.rsplit("/", 1)[-1]); state = load_project_state()
