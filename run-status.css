@@ -49,6 +49,8 @@
 .run-event.tool::before { background: #002fa7; }
 .run-event.tool_complete::before, .run-event.complete::before { background: #16a34a; }
 .run-event.model_complete::before { background: #0891b2; }
+.run-event.plan { color: #3153a4; font-weight: 500; }
+.run-event.plan::before { background: #3153a4; }
 .run-event.verification::before { background: #0f766e; }
 .run-event.supervisor_started::before, .run-event.supervisor_action::before, .run-event.supervisor_message::before { background: #7c3aed; }
 .run-event.supervisor_complete::before { background: #16a34a; }

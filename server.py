@@ -95,10 +95,13 @@ SYSTEM = """You are Qwen, a local coding agent running on Windows. Work as a car
 Execution rules:
 - When the user asks you to create, build, implement, change, or fix something, perform the work with tools. Do not merely describe steps or paste the intended artifact into chat.
 - Put generated code and content into real files with write_file (or a scaffolding command that creates files). Creating an empty directory is only setup and never completes a build task.
+- For implementation work, follow this visible sequence: inspect the relevant files, explain the intended change briefly, edit the real files, run a focused verification command, then summarize the exact files changed and what was verified.
+- Never claim that code was added, changed, or tested unless a tool result proves it. If no file or command tool was used, say that no code change was made.
 - Keep tool calls focused. Do not spend a long generation writing source code into your chat response when that code belongs in a file.
 - Treat the active project folder as authoritative context. For questions about the project, inspect the relevant files instead of guessing from general knowledge.
 - Continue from the current on-disk project state after a steered or interrupted turn; previously completed tool actions may already have changed files.
-- Before finishing an implementation task, inspect the created files and run a relevant verification command when possible. State exactly what was created and tested."""
+- Before finishing an implementation task, inspect the created files and run a relevant verification command when possible. State exactly what was created and tested.
+- Final answers must be structured as: What I did; Files changed (or “No files changed”); Verification; Remaining issues or next step. Keep internal chain-of-thought private and report observable actions and evidence instead."""
 
 BUILT_IN_TOOLS = [
     {"type": "function", "function": {"name": "list_files", "description": "List files and folders at a Windows path.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
@@ -769,7 +772,7 @@ def verification_snapshot(job, workspace):
     verification = {"artifacts": artifact_checks, "artifactsOk": artifacts_ok, "changedFiles": changed_files, "checkedAt": time.time(), "note": "Git status is informational; tool results are the source of truth for file actions."}
     with JOBS_LOCK:
         job["verification"] = verification; job["changedFiles"] = changed_files
-    add_job_event(job, "verification", "Checked the requested artifacts and captured the current project change list before completion.", {"Artifacts verified": f"{sum(1 for item in artifact_checks if item.get('exists'))}/{len(artifact_checks)}", "Changed files reported": len(changed_files), "Completion gate": "Passed" if artifacts_ok else "Blocked until required artifacts exist"})
+    add_job_event(job, "verification", "Checked the requested artifacts and captured the current project change list before completion.", {"Artifacts verified": f"{sum(1 for item in artifact_checks if item.get('exists'))}/{len(artifact_checks)}", "Changed files reported": len(changed_files), "Files": ", ".join(changed_files[:20]) or "No Git changes reported", "Completion gate": "Passed" if artifacts_ok else "Blocked until required artifacts exist"})
     return verification
 
 class BlockedJobError(RuntimeError):
@@ -852,8 +855,8 @@ def stream_ollama_chat(payload, job):
             if part.get("tool_calls"):
                 message["tool_calls"].extend(part["tool_calls"])
             chunks += 1
-            stage = "Qwen is writing its response." if message["content"] else "Qwen is analyzing the request and deciding what to do."
-            update_job_activity(job, "generating", stage, streamChunks=chunks, generatedCharacters=len(message["content"]), thinkingCharacters=len(message["thinking"]), responsePreview=message["content"][-1600:], elapsedSeconds=round(time.time() - started, 1), lastChunkAt=time.time())
+            stage = "Qwen is drafting the next user-facing update." if message["content"] else "Qwen is deciding which files or tools are needed next."
+            update_job_activity(job, "generating", stage, streamChunks=chunks, generatedCharacters=len(message["content"]), responsePreview=message["content"][-1600:], elapsedSeconds=round(time.time() - started, 1), lastChunkAt=time.time())
             if chunk.get("done"):
                 final = chunk
     if job.get("cancelRequested"):
@@ -896,7 +899,7 @@ def record_model_step(job, result, profile, step):
         metrics["lastGeneratedTokens"] = eval_count
         metrics["lastGenerationTps"] = round(generation_tps, 2)
     usage = (prompt_count / profile["num_ctx"] * 100) if prompt_count else 0
-    add_job_event(job, "model_complete", f"Model step {step} finished: {prompt_count:,} prompt tokens processed and {eval_count:,} tokens generated at {generation_tps:.1f} TPS.", {
+    add_job_event(job, "model_complete", "Qwen finished this decision step and is checking whether another file or tool action is needed.", {
         "Context used": f"{prompt_count:,} / {profile['num_ctx']:,} tokens ({usage:.1f}%)",
         "Prompt processing speed": f"{prompt_tps:.1f} tokens/second" if prompt_tps else "Not reported",
         "Generation speed": f"{generation_tps:.1f} tokens/second" if generation_tps else "Not reported",
@@ -1081,7 +1084,9 @@ def describe_tool_result(name, arguments, output, ok):
     if not ok:
         return "That action failed, so Qwen will receive the error and can choose a different approach.", {"Result": "Failed", "Error": redact_text(output)[:1200]}
     if name == "write_file":
-        return f"Saved {arguments.get('path', 'the file')} successfully.", {"Result": "Success", "Change made": "File written to disk"}
+        content = str(arguments.get("content", ""))
+        lines = len(content.splitlines())
+        return f"Added or updated code in {arguments.get('path', 'the file')} ({lines:,} lines) and saved it to disk.", {"Result": "Success", "Change made": "File written to disk", "Path": arguments.get("path", ""), "Lines written": lines}
     if name == "list_files":
         lines = [line for line in output.splitlines() if line.strip()]
         return f"Folder scan finished and returned {len(lines)} lines of information to Qwen.", {"Result": "Success", "Output preview": redact_text("\n".join(lines[:12]))}
@@ -1118,6 +1123,10 @@ def run_agent_job(job_id, incoming):
         threading.Thread(target=job_watchdog, args=(job, workspace, watchdog_stop), daemon=True).start()
         project = active_project()
         add_job_event(job, "setup", "Opening the active project and checking which computer tools and MCP connections Qwen can use.", {"Project": project["name"] if project else "Qwen Studio folder", "Working folder": str(workspace), "Built-in tools": "Read files, write files, list folders, PowerShell", "MCP connections": len(load_mcps())})
+        if requires_artifacts:
+            add_job_event(job, "plan", "Plan: inspect the relevant files, make the requested code change, run a focused verification, then report the exact files changed.", {"Implementation task": "Yes", "Next": "Inspect before editing"})
+        else:
+            add_job_event(job, "plan", "Plan: inspect the available context, answer the request, and show any verification evidence used.", {"Implementation task": "No file change detected from the request"})
         checkpoint_job(job, "Workspace and tool inventory", {"Project": project["name"] if project else "Qwen Studio folder", "Working folder": str(workspace)})
         mcp_tools, mcp_mapping = connected_mcp_tools()
         if mcp_tools: add_job_event(job, "mcp", f"Loaded {len(mcp_tools)} MCP tool{'s' if len(mcp_tools) != 1 else ''}.")
@@ -1177,7 +1186,7 @@ def run_agent_job(job_id, incoming):
                     job["status"] = "complete" if review.get("ok", True) else "complete_with_warnings"; job["finishedAt"] = time.time()
                 if incoming.get("threadId"):
                     append_thread_message(incoming["threadId"], "assistant", message.get("content", ""))
-                add_job_event(job, "complete", "Qwen finished generating the answer.", {"Component": "Agent loop", "Result": "No more tool calls requested", "Total prompt tokens": f"{job['metrics'].get('totalPromptTokens', 0):,}", "Total generated tokens": f"{job['metrics'].get('totalGeneratedTokens', 0):,}", **performance_details(result)})
+                add_job_event(job, "complete", "Qwen completed the requested work and produced the final answer.", {"Component": "Agent loop", "Result": "No further tool actions requested", "Files changed": len(job.get("artifacts", [])), "Total prompt tokens": f"{job['metrics'].get('totalPromptTokens', 0):,}", "Total generated tokens": f"{job['metrics'].get('totalGeneratedTokens', 0):,}", **performance_details(result)})
                 update_job_activity(job, "complete", "Finished.")
                 return
             conversation.append(message)
