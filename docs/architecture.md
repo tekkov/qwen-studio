@@ -7,6 +7,10 @@ Qwen Studio is a small local desktop stack:
 3. Ollama runs the selected Qwen model and streams content, thinking, tool calls, and performance counters.
 4. The MCP bridge launches configured stdio servers and maps their tools into Ollama's function-calling format.
 
+On desktop startup, Tauri selects an unused loopback port, creates a random per-launch API token, and starts Python without opening a console window. The UI learns the private URL and token through a Tauri command; every API request must present that token. Browser origins outside the Tauri webview are rejected. The backend is restarted if it exits unexpectedly and is terminated when the desktop app closes.
+
+Tauri also starts a local Ollama process when the configured loopback runtime is unavailable. A custom `OLLAMA_URL` remains user-managed. Only one Qwen Studio desktop instance runs at a time, preventing competing backends and duplicate windows.
+
 ## Durable entities
 
 - **Project:** a linked or newly created local folder and active workspace.

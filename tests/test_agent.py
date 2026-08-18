@@ -81,10 +81,10 @@ class AgentCompletionGuardTests(unittest.TestCase):
             self.assertEqual(server.JOBS[job_id]["status"], "complete")
             self.assertTrue(any(event["kind"] == "guardrail" and "no visible answer" in event["text"] for event in server.JOBS[job_id]["events"]))
 
-    def test_agent_powershell_reports_process_and_live_output(self):
+    def test_agent_native_shell_reports_process_and_live_output(self):
         with tempfile.TemporaryDirectory() as folder:
             job = {"events": [], "metrics": {}, "updatedAt": 0, "cancelRequested": False}
-            output = server.run_command_streamed("Write-Output 'live progress'", Path(folder), job)
+            output = server.run_command_streamed("python -c \"print('live progress')\"", Path(folder), job)
             self.assertIn("exit_code=0", output)
             self.assertIn("live progress", output)
             self.assertTrue(any(event["kind"] == "process" for event in job["events"]))

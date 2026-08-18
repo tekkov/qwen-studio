@@ -4,6 +4,6 @@
   "version": "0.4.3",
   "identifier": "local.qwen.studio",
   "build": { "beforeDevCommand": "npm run frontend:build", "beforeBuildCommand": "npm run frontend:build", "frontendDist": "../frontend-dist" },
-  "app": { "withGlobalTauri": true, "windows": [{ "title": "Qwen Studio", "width": 1220, "height": 860, "minWidth": 760, "minHeight": 620, "backgroundColor": "#0b0c0a" }], "security": { "csp": null } },
-  "bundle": { "active": true, "targets": "all", "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"], "resources": ["../server.py", "../mcp-bridge.mjs", "../tauri-bridge.js", "../*.css", "../icons.js", "../app.js", "../README.md", "../LICENSE", "../SECURITY.md", "../docs"] }
+  "app": { "withGlobalTauri": true, "windows": [{ "title": "Qwen Studio", "width": 1220, "height": 860, "minWidth": 760, "minHeight": 620, "backgroundColor": "#0b0c0a" }], "security": { "csp": "default-src 'self'; connect-src http://127.0.0.1:* ipc: http://ipc.localhost; img-src 'self' data: blob: http://127.0.0.1:*; style-src 'self' 'unsafe-inline'; script-src 'self'" } },
+  "bundle": { "active": true, "targets": "all", "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"], "resources": ["../server.py", "../mcp-bridge.mjs", "../tauri-bridge.js", "../bootstrap.js", "../*.css", "../icons.js", "../app.js", "../README.md", "../LICENSE", "../SECURITY.md", "../docs"] }
 }

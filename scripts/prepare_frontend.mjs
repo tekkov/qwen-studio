@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const output = join(root, 'frontend-dist');
 const files = [
-  'index.html', 'app.js', 'icons.js', 'tauri-bridge.js',
+  'index.html', 'bootstrap.js', 'app.js', 'icons.js', 'tauri-bridge.js',
   'style.css', 'run-status.css', 'projects.css', 'project-tree.css',
   'terminal.css', 'product-shell.css'
 ];

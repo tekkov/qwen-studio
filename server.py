@@ -1,5 +1,6 @@
 import base64
 import hashlib
+import hmac
 import html
 import json
 import mimetypes
@@ -24,6 +25,8 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).parent
 HOST, PORT = "127.0.0.1", int(os.getenv("QWEN_PORT", "8000"))
+API_TOKEN = os.getenv("QWEN_API_TOKEN", "")
+ALLOWED_ORIGINS = {"http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"}
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
 MODEL = os.getenv("QWEN_MODEL", "qwen3.8:27b")
 def user_data_dir():
@@ -62,13 +65,19 @@ def shell_command(command):
     if os.name == "nt": return ["powershell", "-NoLogo", "-NoProfile", "-Command", command]
     return [os.getenv("SHELL", "/bin/sh"), "-lc", command]
 
+def process_options(new_session=False):
+    if os.name == "nt": return {"creationflags": getattr(subprocess, "CREATE_NO_WINDOW", 0)}
+    return {"start_new_session": True} if new_session else {}
+
 def stop_process(process):
     if not process or process.poll() is not None: return
-    if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10)
-    else: process.terminate()
+    if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10, **process_options())
+    else:
+        try: os.killpg(process.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError): process.terminate()
 
 def stop_process_id(process_id):
-    if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process_id), "/T", "/F"], capture_output=True, timeout=10)
+    if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process_id), "/T", "/F"], capture_output=True, timeout=10, **process_options())
     else: os.kill(int(process_id), signal.SIGTERM)
 
 SUPERVISOR_DEFAULTS = {
@@ -94,17 +103,19 @@ PROFILES = {
 
 def ollama_model_info():
     now = time.time()
-    if MODEL_INFO_CACHE["value"] is not None and now - MODEL_INFO_CACHE["at"] < 60:
+    cache_seconds = 60 if (MODEL_INFO_CACHE.get("value") or {}).get("available") else 3
+    if MODEL_INFO_CACHE["value"] is not None and now - MODEL_INFO_CACHE["at"] < cache_seconds:
         return MODEL_INFO_CACHE["value"]
-    value = {"available": False, "capabilities": [], "nativeContext": None}
+    value = {"available": False, "state": "offline", "message": "Ollama is not reachable yet.", "capabilities": [], "nativeContext": None}
     try:
         request = Request(f"{OLLAMA_URL}/api/show", data=json.dumps({"model": MODEL}).encode("utf-8"), headers={"Content-Type": "application/json"})
         with urlopen(request, timeout=3) as response: details = json.loads(response.read())
         model_info = details.get("model_info", {})
         context = next((number for key, number in model_info.items() if key.endswith(".context_length")), None)
-        value = {"available": True, "capabilities": details.get("capabilities", []), "nativeContext": context, "parameterSize": details.get("details", {}).get("parameter_size"), "quantization": details.get("details", {}).get("quantization_level")}
-    except Exception:
-        pass
+        value = {"available": True, "state": "ready", "message": "Ollama and the selected model are ready.", "capabilities": details.get("capabilities", []), "nativeContext": context, "parameterSize": details.get("details", {}).get("parameter_size"), "quantization": details.get("details", {}).get("quantization_level")}
+    except HTTPError as error:
+        if error.code in (400, 404): value.update({"state": "model-missing", "message": f"Model {MODEL} is not installed in Ollama."})
+    except Exception: pass
     MODEL_INFO_CACHE.update({"at": now, "value": value})
     return value
 
@@ -204,7 +215,7 @@ def codex_cli_status():
     if not available:
         CODEX_STATUS_CACHE.update({"at": now, "value": status}); return status
     try:
-        result = subprocess.run([command, "login", "status"], capture_output=True, text=True, timeout=8, cwd=ROOT)
+        result = subprocess.run([command, "login", "status"], capture_output=True, text=True, timeout=8, cwd=ROOT, **process_options())
         output = redact_text((result.stdout or "") + "\n" + (result.stderr or ""))
         lower = output.lower()
         status["authenticated"] = result.returncode == 0
@@ -231,7 +242,7 @@ def lower_process_priority(process):
     settings = load_runtime_settings()
     if not process or (not settings.get("lowResource") and settings.get("processPriority") != "below-normal") or os.name != "nt": return
     try:
-        subprocess.run(["powershell", "-NoProfile", "-Command", f"$p=Get-Process -Id {int(process.pid)} -ErrorAction SilentlyContinue; if ($p) {{ $p.PriorityClass='BelowNormal' }}"], capture_output=True, timeout=8)
+        subprocess.run(["powershell", "-NoProfile", "-Command", f"$p=Get-Process -Id {int(process.pid)} -ErrorAction SilentlyContinue; if ($p) {{ $p.PriorityClass='BelowNormal' }}"], capture_output=True, timeout=8, **process_options())
     except Exception: pass
 
 def detected_busy_processes(settings=None):
@@ -239,7 +250,7 @@ def detected_busy_processes(settings=None):
     wanted = {item.strip().lower().replace(".exe", "") for item in str(settings.get("busyProcesses") or "").split(",") if item.strip()}
     if not wanted or os.name != "nt": return []
     try:
-        result = subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-Process | Select-Object -ExpandProperty ProcessName)"], capture_output=True, text=True, timeout=8)
+        result = subprocess.run(["powershell", "-NoProfile", "-Command", "(Get-Process | Select-Object -ExpandProperty ProcessName)"], capture_output=True, text=True, timeout=8, **process_options())
         running = {line.strip().lower() for line in result.stdout.splitlines() if line.strip()}
         return sorted(wanted & running)
     except Exception:
@@ -260,8 +271,8 @@ def tool_approval_requirement(name, arguments, workspace, profile):
         if not path_is_within(target, workspace): return {"reason": "This file is outside the active project folder.", "action": "Write a file outside the project", "target": str(target)}
     if name == "run_command":
         command = str(arguments.get("command", "")); lower = command.lower()
-        destructive = re.search(r"\b(remove-item|del\s|erase\s|rmdir\s|format-\w+|git\s+(reset|checkout|clean|restore)|stop-process|taskkill)\b", lower)
-        network = re.search(r"\b(invoke-webrequest|invoke-restmethod|curl\s|wget\s|iwr\s|irm\s|start-bitstransfer|git\s+(clone|fetch|pull|push)|npm\s+(install|i|ci)|pip\s+install)\b", lower)
+        destructive = re.search(r"\b(remove-item|del\s|erase\s|rmdir\s|rm\s|sudo\s|shutdown\s|reboot\s|mkfs\b|dd\s|chmod\s|chown\s|kill\s|pkill\s|format-\w+|git\s+(reset|checkout|clean|restore)|stop-process|taskkill)\b", lower)
+        network = re.search(r"\b(invoke-webrequest|invoke-restmethod|curl\s|wget\s|iwr\s|irm\s|start-bitstransfer|git\s+(clone|fetch|pull|push)|npm\s+(install|i|ci)|pip\s+install|pip3\s+install)\b", lower)
         if profile == "read-only": return {"reason": "This session is read-only, so running a computer command needs your approval.", "action": "Run a shell command", "command": redact_text(command)}
         if destructive: return {"reason": "This potentially destructive command can delete, reset, stop, or otherwise change existing computer state.", "action": "Run a potentially destructive command", "command": redact_text(command)}
         if network: return {"reason": "This command connects to an external service or downloads data.", "action": "Run a network command", "command": redact_text(command)}
@@ -470,7 +481,7 @@ def public_attachment(attachment):
     return {key: value for key, value in attachment.items() if key not in ("storedPath", "derivedFrames", "extractedText")}
 
 def video_duration(path):
-    result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)], capture_output=True, text=True, timeout=30)
+    result = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(path)], capture_output=True, text=True, timeout=30, **process_options())
     try: return max(0.0, float(result.stdout.strip()))
     except ValueError: return 0.0
 
@@ -478,7 +489,7 @@ def sample_video_frames(source, target_dir, maximum=8):
     duration = video_duration(source)
     interval = max(duration / maximum, 1.0) if duration else 2.0
     pattern = target_dir / "frame-%02d.jpg"
-    result = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(source), "-vf", f"fps=1/{interval:.3f},scale='min(1280,iw)':-2", "-frames:v", str(maximum), "-q:v", "3", str(pattern)], capture_output=True, text=True, timeout=180)
+    result = subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(source), "-vf", f"fps=1/{interval:.3f},scale='min(1280,iw)':-2", "-frames:v", str(maximum), "-q:v", "3", str(pattern)], capture_output=True, text=True, timeout=180, **process_options())
     if result.returncode: raise RuntimeError((result.stderr or "FFmpeg could not sample this video.")[-1000:])
     return [str(path) for path in sorted(target_dir.glob("frame-*.jpg"))], duration
 
@@ -496,7 +507,7 @@ def extract_document_text(path):
     if path.suffix.lower() == ".pdf":
         executable = shutil.which("pdftotext")
         if not executable: return "", "PDF text extraction needs pdftotext or another PDF parser installed on this computer."
-        result = subprocess.run([executable, "-layout", str(path), "-"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        result = subprocess.run([executable, "-layout", str(path), "-"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60, **process_options())
         if result.returncode: return "", (result.stderr or "PDF text extraction failed.")[-500:]
         return result.stdout[:120000], None
     return "", "This file type is stored locally but has no built-in text extractor. Attach a supported text, image, video, PDF, or DOCX file, or ask Qwen to inspect it with a tool."
@@ -583,7 +594,7 @@ def mcp_id(name):
     return re.sub(r"[^a-z0-9-]+", "-", name.lower()).strip("-") or "mcp"
 
 def bridge(payload, timeout=45):
-    result = subprocess.run(["node", str(MCP_BRIDGE)], input=json.dumps(payload), text=True, capture_output=True, timeout=timeout, cwd=ROOT)
+    result = subprocess.run(["node", str(MCP_BRIDGE)], input=json.dumps(payload), text=True, capture_output=True, timeout=timeout, cwd=ROOT, **process_options())
     if result.returncode:
         raise RuntimeError((result.stderr or result.stdout or "MCP bridge failed").strip()[-1000:])
     return json.loads(result.stdout)
@@ -615,12 +626,12 @@ def connected_mcp_tools():
 def git_snapshot(workspace):
     snapshot = {"available": False, "isRepository": False, "branch": None, "status": [], "diffStat": "", "worktrees": [], "error": None}
     try:
-        root = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=workspace, capture_output=True, text=True, timeout=15)
+        root = subprocess.run(["git", "rev-parse", "--show-toplevel"], cwd=workspace, capture_output=True, text=True, timeout=15, **process_options())
         if root.returncode != 0: return snapshot
-        status = subprocess.run(["git", "status", "--short"], cwd=workspace, capture_output=True, text=True, timeout=15)
-        branch = subprocess.run(["git", "branch", "--show-current"], cwd=workspace, capture_output=True, text=True, timeout=15)
-        diff = subprocess.run(["git", "diff", "--stat"], cwd=workspace, capture_output=True, text=True, timeout=15)
-        worktrees = subprocess.run(["git", "worktree", "list", "--porcelain"], cwd=workspace, capture_output=True, text=True, timeout=15)
+        status = subprocess.run(["git", "status", "--short"], cwd=workspace, capture_output=True, text=True, timeout=15, **process_options())
+        branch = subprocess.run(["git", "branch", "--show-current"], cwd=workspace, capture_output=True, text=True, timeout=15, **process_options())
+        diff = subprocess.run(["git", "diff", "--stat"], cwd=workspace, capture_output=True, text=True, timeout=15, **process_options())
+        worktrees = subprocess.run(["git", "worktree", "list", "--porcelain"], cwd=workspace, capture_output=True, text=True, timeout=15, **process_options())
         snapshot.update({"available": True, "isRepository": True, "branch": branch.stdout.strip() or "detached HEAD", "status": [redact_text(line) for line in status.stdout.splitlines() if line.strip()][:200], "diffStat": redact_text(diff.stdout[-6000:]), "worktrees": [line[5:] for line in worktrees.stdout.splitlines() if line.startswith("worktree ")][:50]})
     except FileNotFoundError: snapshot["error"] = "Git is not installed or not on PATH."
     except Exception as error: snapshot["error"] = redact_text(str(error))
@@ -632,7 +643,7 @@ def git_diff_preview(workspace, relative_path=None):
         target = resolve_workspace_path(relative_path, workspace).resolve()
         if not path_is_within(target, workspace): raise PermissionError("Diff preview is limited to the active project folder.")
         command.extend(["--", str(target.relative_to(Path(workspace).resolve()))])
-    result = subprocess.run(command, cwd=workspace, capture_output=True, text=True, timeout=30)
+    result = subprocess.run(command, cwd=workspace, capture_output=True, text=True, timeout=30, **process_options())
     if result.returncode: raise RuntimeError(result.stderr.strip() or "Git diff could not be read.")
     return {"path": relative_path, "preview": redact_text(result.stdout[-40000:]), "truncated": len(result.stdout) > 40000}
 
@@ -668,7 +679,7 @@ def run_tool(name, arguments, mcp_mapping, workspace):
         target.write_text(arguments.get("content", ""), encoding="utf-8")
         return f"Wrote {target}"
     if name == "run_command":
-        result = subprocess.run(shell_command(arguments.get("command", "")), cwd=workspace, capture_output=True, text=True, timeout=900)
+        result = subprocess.run(shell_command(arguments.get("command", "")), cwd=workspace, capture_output=True, text=True, timeout=900, **process_options())
         return f"exit_code={result.returncode}\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"[-12000:]
     if name == "get_terminal_output":
         with TERMINAL_LOCK:
@@ -683,6 +694,7 @@ def run_command_streamed(command, workspace, job):
     process = subprocess.Popen(
         shell_command(command), cwd=workspace,
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1,
+        **process_options(new_session=True),
     )
     lower_process_priority(process)
     add_job_event(job, "process", f"Shell started process {process.pid} in {workspace}.", {"Process ID": process.pid, "Working folder": str(workspace), "Command": redact_text(command)})
@@ -786,7 +798,7 @@ def verification_snapshot(job, workspace):
         artifact_checks.append({"artifact": artifact, "exists": path.is_file() or path.is_dir()})
     changed_files = []
     try:
-        result = subprocess.run(["git", "status", "--short"], cwd=workspace, capture_output=True, text=True, timeout=20)
+        result = subprocess.run(["git", "status", "--short"], cwd=workspace, capture_output=True, text=True, timeout=20, **process_options())
         changed_files = [redact_text(line) for line in result.stdout.splitlines()[:120] if line.strip()]
     except Exception:
         changed_files = []
@@ -940,6 +952,7 @@ def run_terminal_command(run_id, command, workspace):
             encoding="utf-8",
             errors="replace",
             bufsize=1,
+            **process_options(new_session=True),
         )
         with TERMINAL_LOCK:
             run["process"] = process
@@ -995,7 +1008,7 @@ def supervisor_budget_reserve(settings):
 def run_codex_supervisor(job, stage, workspace, instruction):
     """Run an optional Codex review and stream JSONL events into the same job timeline."""
     settings = load_runtime_settings()
-    if not job.get("supervisorEnabled", settings.get("enabled")):
+    if not bool(job.get("supervisorEnabled")):
         return {"enabled": False, "ok": True, "message": "Codex supervision is disabled for this job."}
     allowed, reason = supervisor_budget_reserve(settings)
     if not allowed:
@@ -1024,17 +1037,17 @@ Return a final summary with: observed state, action taken, verification evidence
     update_job_activity(job, "supervisor", f"Codex is reviewing the project after Qwen's {stage} milestone.")
     final_text, session_id, usage = "", None, {}
     try:
-        process = subprocess.Popen(args, cwd=workspace, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1)
+        process = subprocess.Popen(args, cwd=workspace, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1, **process_options(new_session=True))
         lower_process_priority(process)
         job["supervisorPid"] = process.pid
         started = time.time()
         for raw in process.stdout:
             if job.get("cancelRequested"):
-                if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10)
+                if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10, **process_options())
                 else: process.terminate()
                 break
             if time.time() - started > 600:
-                if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10)
+                if os.name == "nt": subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"], capture_output=True, timeout=10, **process_options())
                 else: process.terminate()
                 add_job_event(job, "supervisor_error", "Codex supervisor exceeded its 10-minute review window and was stopped.", {"Stage": stage})
                 break
@@ -1291,17 +1304,35 @@ def run_agent_job(job_id, incoming):
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_): pass
+    def cors_origin(self):
+        origin = self.headers.get("Origin", "")
+        return origin if origin in ALLOWED_ORIGINS else None
+    def send_cors_headers(self):
+        origin = self.cors_origin()
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Qwen-Token")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
+    def require_api_access(self, route):
+        if not route.startswith("/api/") or not API_TOKEN: return True
+        supplied = self.headers.get("X-Qwen-Token", "")
+        if supplied and hmac.compare_digest(supplied, API_TOKEN): return True
+        self.send_json(403, {"error": "This local API request was not authorized by Qwen Studio."})
+        return False
     def read_json(self):
         return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)) or 0))
     def send_json(self, status, payload):
         body = json.dumps(payload).encode("utf-8")
-        self.send_response(status); self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Access-Control-Allow-Headers", "Content-Type"); self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+        self.send_response(status); self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Cache-Control", "no-store"); self.send_cors_headers(); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
     def do_OPTIONS(self):
-        self.send_response(204); self.send_header("Access-Control-Allow-Origin", "*"); self.send_header("Access-Control-Allow-Headers", "Content-Type"); self.send_header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"); self.end_headers()
+        if self.headers.get("Origin") and not self.cors_origin(): self.send_response(403); self.end_headers(); return
+        self.send_response(204); self.send_cors_headers(); self.end_headers()
     def send_file(self, path, content_type):
-        data = Path(path).read_bytes(); self.send_response(200); self.send_header("Content-Type", content_type); self.send_header("Content-Length", str(len(data))); self.send_header("Cache-Control", "private, max-age=3600"); self.end_headers(); self.wfile.write(data)
+        data = Path(path).read_bytes(); self.send_response(200); self.send_header("Content-Type", content_type); self.send_cors_headers(); self.send_header("Content-Length", str(len(data))); self.send_header("Cache-Control", "private, max-age=3600"); self.end_headers(); self.wfile.write(data)
     def do_GET(self):
         route = urlparse(self.path).path
+        if not self.require_api_access(route): return
         ensure_jobs_loaded()
         if route == "/api/status":
             project = active_project()
@@ -1389,8 +1420,16 @@ class Handler(BaseHTTPRequestHandler):
         data = file_path.read_bytes(); self.send_response(200); self.send_header("Content-Type", f"{content_type}; charset=utf-8"); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
     def do_POST(self):
         route = urlparse(self.path).path
+        if not self.require_api_access(route): return
         try:
             ensure_jobs_loaded()
+            if route.startswith("/api/jobs/") and route.endswith("/dismiss"):
+                job_id = unquote(route.split("/")[3])
+                with JOBS_LOCK:
+                    job = JOBS.get(job_id)
+                    if job: job["dismissed"] = True; job["updatedAt"] = time.time()
+                if not job: self.send_json(404, {"error": "Job not found."}); return
+                persist_jobs(); self.send_json(200, {"dismissed": True}); return
             if route == "/api/supervisor":
                 incoming = self.read_json(); settings = load_runtime_settings()
                 for key in ("enabled", "mode", "sandbox", "maxRunsPerJob", "dailyBudgetUsd", "lowResource", "permissionProfile", "outputTokens", "processPriority", "supervisorCadence", "idleOnly", "busyProcesses"):
@@ -1560,6 +1599,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as error: self.send_json(500, {"error": str(error)})
     def do_DELETE(self):
         route = urlparse(self.path).path
+        if not self.require_api_access(route): return
         ensure_jobs_loaded()
         if route.startswith("/api/jobs/"):
             job_id = unquote(route.rsplit("/", 1)[-1])

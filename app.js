@@ -1,4 +1,4 @@
-const state = { history: [], mode: 'fast', profiles: {}, supervisor: {}, recoveryJobs: [], currentView: 'chat', running: false, activeJobId: null, activeRunCard: null, queuedDirections: [], steering: false, terminalRun: null, terminalHistory: [], terminalHistoryIndex: 0, terminalTranscript: '', project: null, threadId: null, threadProjectId: null, pendingAttachments: [] };
+const state = { history: [], mode: 'fast', profiles: {}, supervisor: {}, recoveryJobs: [], currentView: 'chat', running: false, runtimeReady: false, activeJobId: null, activeRunCard: null, queuedDirections: [], steering: false, terminalRun: null, terminalHistory: [], terminalHistoryIndex: 0, terminalTranscript: '', project: null, threadId: null, threadProjectId: null, pendingAttachments: [] };
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const messages = $('#messages');
@@ -29,9 +29,16 @@ function showView(view) {
   if (view === 'workspace') refreshProjects();
 }
 
-function setConnected(connected) {
-  $('#connection').textContent = connected ? 'Local runtime ready' : 'Local runtime offline';
-  $('#connection-dot').className = connected ? 'ready' : 'offline';
+function setConnected(connected, label = connected ? 'Local runtime ready' : 'Local runtime offline', status = connected ? 'ready' : 'offline') {
+  $('#connection').textContent = label;
+  $('#connection-dot').className = status;
+}
+
+function updateComposerAvailability() {
+  const send = $('#send');
+  if (!send || state.running) return;
+  send.disabled = !state.runtimeReady;
+  send.title = state.runtimeReady ? '' : 'Waiting for Ollama and the selected model';
 }
 
 async function loadStatus() {
@@ -48,13 +55,21 @@ async function loadStatus() {
     renderMode();
     renderSupervisor();
     $('#active-project-name').textContent = data.project?.name || 'No project';
-    $('#settings-runtime').textContent = data.runtime?.available ? 'Connected' : 'Offline';
     $('#settings-capabilities').textContent = (data.runtime?.capabilities || []).join(', ') || 'Not reported';
     $('#settings-native-context').textContent = data.runtime?.nativeContext ? `${Number(data.runtime.nativeContext).toLocaleString()} tokens` : 'Not reported';
-    setConnected(Boolean(data.runtime?.available));
-    if (!data.runtime?.available) showNotice(`Ollama is not ready for ${data.model}. Start Ollama and make sure that model is installed.`, 'error');
+    state.runtimeReady = Boolean(data.runtime?.available);
+    const runtimeState = data.runtime?.state || (state.runtimeReady ? 'ready' : 'offline');
+    const runtimeLabel = state.runtimeReady ? 'Local runtime ready' : runtimeState === 'model-missing' ? 'Model not installed' : 'Starting Ollama…';
+    $('#settings-runtime').textContent = state.runtimeReady ? 'Connected' : runtimeState === 'model-missing' ? 'Model missing' : 'Starting…';
+    setConnected(state.runtimeReady, runtimeLabel, state.runtimeReady ? 'ready' : runtimeState === 'model-missing' ? 'offline' : 'starting');
+    updateComposerAvailability();
+    if (!state.runtimeReady && !loadStatus.runtimeNoticeShown) {
+      showNotice(runtimeState === 'model-missing' ? `${data.model} is not installed. Run “ollama pull ${data.model}” once, then Qwen Studio will connect automatically.` : `Starting Ollama for ${data.model}. The app will become ready automatically when the model is available.`, 'error');
+      loadStatus.runtimeNoticeShown = true;
+    }
+    if (state.runtimeReady) loadStatus.runtimeNoticeShown = false;
     refreshRecoveryJobs();
-  } catch { setConnected(false); }
+  } catch { state.runtimeReady = false; setConnected(false, 'Starting local backend…', 'starting'); updateComposerAvailability(); }
 }
 
 function ensureResourceControls() {
@@ -102,7 +117,7 @@ async function refreshRecoveryJobs() {
   const banner = $('#recovery-banner'); if (!banner) return;
   try {
     const data = await fetch('/api/jobs').then(response => response.json());
-    const jobs = (data.items || []).filter(job => ['interrupted', 'error', 'stopped', 'blocked'].includes(job.status)).slice(0, 5);
+    const jobs = (data.items || []).filter(job => !job.dismissed && ['interrupted', 'error', 'stopped', 'blocked'].includes(job.status)).slice(0, 5);
     state.recoveryJobs = jobs; banner.hidden = !jobs.length; banner.innerHTML = '';
     if (!jobs.length) return;
     const heading = document.createElement('strong'); heading.textContent = 'Work that can be resumed'; banner.append(heading);
@@ -110,8 +125,10 @@ async function refreshRecoveryJobs() {
     jobs.forEach(job => {
       const row = document.createElement('div'); row.className = 'recovery-row';
       const text = document.createElement('span'); text.textContent = `${job.activity || 'Previous job'} · ${job.status}`;
+      const actions = document.createElement('div'); actions.className = 'recovery-actions';
       const button = document.createElement('button'); button.type = 'button'; button.textContent = 'Resume'; button.addEventListener('click', () => resumeJob(job));
-      row.append(text, button); banner.append(row);
+      const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'text-button'; dismiss.textContent = 'Dismiss'; dismiss.addEventListener('click', async () => { await fetch(`/api/jobs/${job.id}/dismiss`, { method: 'POST' }); refreshRecoveryJobs(); });
+      actions.append(button, dismiss); row.append(text, actions); banner.append(row);
     });
   } catch { banner.hidden = true; }
 }
@@ -246,7 +263,11 @@ function formatBytes(bytes) {
 function attachmentVisual(attachment, removable = false) {
   const item = document.createElement('div'); item.className = `attachment-chip ${attachment.kind}`;
   if (attachment.kind === 'image' || attachment.kind === 'video') {
-    const preview = document.createElement('img'); preview.src = `/api/attachments/${attachment.id}/content`; preview.alt = ''; item.append(preview);
+    const preview = document.createElement('img'); preview.alt = ''; item.append(preview);
+    fetch(`/api/attachments/${attachment.id}/content`).then(response => {
+      if (!response.ok) throw new Error('Attachment preview unavailable.');
+      return response.blob();
+    }).then(blob => { preview.src = URL.createObjectURL(blob); }).catch(() => { preview.hidden = true; });
   } else {
     const mark = document.createElement('span'); mark.className = 'attachment-kind'; mark.textContent = attachment.kind === 'text' ? 'TXT' : 'FILE'; item.append(mark);
   }
@@ -576,6 +597,7 @@ async function drainDirections() {
 
 async function sendMessage(text, options = {}) {
   if (state.running) { await queueDirection(text); return; }
+  if (!state.runtimeReady) { showNotice('Ollama is still starting. Qwen will be available when the local runtime indicator turns green.'); return; }
   const availableAttachments = options.attachments || state.pendingAttachments;
   if (!text.trim() && !availableAttachments.length) return;
   if (!state.threadId && !(await createChat())) return;
@@ -619,7 +641,7 @@ async function sendMessage(text, options = {}) {
   }
   finally {
     state.running = false; state.activeJobId = null; state.activeRunCard = null;
-    $('#send').disabled = false; $('#send').textContent = state.queuedDirections.length ? 'Queued' : 'Send'; $('#mode').disabled = false; prompt.focus();
+    $('#send').disabled = false; $('#send').textContent = state.queuedDirections.length ? 'Queued' : 'Send'; $('#mode').disabled = false; updateComposerAvailability(); prompt.focus();
     if (state.queuedDirections.length) setTimeout(drainDirections, 0);
   }
 }
@@ -822,6 +844,7 @@ $('#terminal-input').addEventListener('keydown', event => {
 $('#composer').addEventListener('dragover', event => { event.preventDefault(); event.currentTarget.classList.add('dragging'); });
 $('#composer').addEventListener('dragleave', event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.classList.remove('dragging'); });
 $('#composer').addEventListener('drop', event => { event.preventDefault(); event.currentTarget.classList.remove('dragging'); const paths = [...event.dataTransfer.files].map(file => window.qwenDesktop?.filePath?.(file)).filter(Boolean); ingestAttachmentPaths(paths); });
+window.qwenDesktop?.onFileDrop?.(paths => ingestAttachmentPaths(paths)).catch(error => showNotice(`File drop is unavailable: ${error.message}`));
 $('#composer').addEventListener('submit', event => { event.preventDefault(); const text = prompt.value; prompt.value = ''; sendMessage(text); });
 prompt.addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('#composer').requestSubmit(); } });
 $$('.starter').forEach(button => button.addEventListener('click', () => { prompt.value = button.textContent; prompt.focus(); }));

@@ -26,6 +26,8 @@
 .recovery-row + .recovery-row { margin-top: 7px; }
 .recovery-row span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recovery-row button { border: 0; border-radius: 5px; padding: 5px 9px; background: #6d38d6; color: white; font-size: 10px; }
+.recovery-actions { display: flex; align-items: center; gap: 5px; }
+.recovery-actions .text-button { background: transparent; color: #6d5b8a; }
 .app-notice { max-width: 760px; margin: 10px auto; border: 1px solid #efcaca; border-radius: 8px; padding: 10px 12px; background: #fff4f4; color: #8b2626; font-size: 11px; }
 .app-notice.success { border-color: #c7e4d0; background: #f2fbf4; color: #216b38; }
 .active-project-name { max-width: 260px; overflow: hidden; border-left: 1px solid var(--q-line); padding-left: 10px; color: var(--q-muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -80,6 +82,7 @@
 .attachment-error { flex-basis: 100%; border-radius: 6px; padding: 7px 9px; background: #fff0f0; color: #a32626; font-size: 10px; }
 .composer.dragging { border-color: var(--q-accent); box-shadow: 0 0 0 3px rgba(36, 87, 230, .1); }
 .project-head-actions { display: flex; gap: 8px; }
+.local-state i.starting { background: #d6981f; box-shadow: 0 0 0 3px rgba(214, 152, 31, .12); }
 .model-select button:disabled { cursor: not-allowed; opacity: .55; }
 .message-prose { white-space: pre-wrap; }
 .message-status { display: block; width: max-content; margin-top: 7px; border-radius: 9px; padding: 2px 7px; background: #eef2ff; color: #3153a4; font-size: 9px; }

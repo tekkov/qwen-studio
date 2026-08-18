@@ -38,7 +38,7 @@ def main():
                 continue
             if not (ROOT / target).exists():
                 errors.append(f"Broken README link: {target}")
-    required = ["server.py", "index.html", "app.js", "tauri-bridge.js", "src-tauri/tauri.conf.json", "mcp-bridge.mjs", "LICENSE", ".env.example"]
+    required = ["server.py", "index.html", "bootstrap.js", "app.js", "tauri-bridge.js", "scripts/run_native_tool.mjs", "src-tauri/tauri.conf.json", "mcp-bridge.mjs", "LICENSE", ".env.example"]
     errors.extend(f"Missing release file: {item}" for item in required if not (ROOT / item).exists())
     if errors:
         print("Release audit failed:")

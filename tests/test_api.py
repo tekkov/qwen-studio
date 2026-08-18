@@ -70,7 +70,7 @@ class ApiSmokeTests(unittest.TestCase):
         self.assertEqual(deleted["deleted"], thread["id"])
 
     def test_terminal_streams_output_and_exits(self):
-        _, run = self.request("/api/terminal", "POST", {"command": "Write-Output 'terminal smoke ok'"})
+        _, run = self.request("/api/terminal", "POST", {"command": "python -c \"print('terminal smoke ok')\""})
         for _ in range(50):
             _, current = self.request(f"/api/terminal/{run['id']}")
             if current["status"] != "running": break
@@ -78,6 +78,34 @@ class ApiSmokeTests(unittest.TestCase):
         self.assertEqual(current["status"], "complete")
         self.assertEqual(current["exitCode"], 0)
         self.assertIn("terminal smoke ok", current["output"])
+
+    def test_packaged_api_requires_the_session_token(self):
+        with patch.object(server, "API_TOKEN", "test-session-token"):
+            unauthorized = Request(f"http://127.0.0.1:{self.port}/api/status")
+            with self.assertRaises(HTTPError) as error:
+                urlopen(unauthorized, timeout=10)
+            self.assertEqual(error.exception.code, 403)
+            error.exception.close()
+            authorized = Request(f"http://127.0.0.1:{self.port}/api/status", headers={"X-Qwen-Token": "test-session-token"})
+            with urlopen(authorized, timeout=10) as response:
+                self.assertEqual(response.status, 200)
+
+    def test_untrusted_browser_origin_is_rejected(self):
+        request = Request(f"http://127.0.0.1:{self.port}/api/status", method="OPTIONS", headers={"Origin": "https://malicious.example"})
+        with self.assertRaises(HTTPError) as error:
+            urlopen(request, timeout=10)
+        self.assertEqual(error.exception.code, 403)
+        error.exception.close()
+
+    def test_failed_job_can_be_dismissed_from_recovery(self):
+        job_id = "dismiss-test"
+        server.ensure_jobs_loaded()
+        with server.JOBS_LOCK:
+            server.JOBS[job_id] = {"id": job_id, "status": "error", "events": [], "metrics": {}, "createdAt": time.time(), "updatedAt": time.time()}
+        status, result = self.request(f"/api/jobs/{job_id}/dismiss", "POST")
+        self.assertEqual(status, 200)
+        self.assertTrue(result["dismissed"])
+        self.assertTrue(server.JOBS[job_id]["dismissed"])
 
     def test_supervisor_settings_are_explicit_and_metered(self):
         _, before = self.request("/api/supervisor")
