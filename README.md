@@ -53,11 +53,12 @@ Qwen:  “I’ll inspect the current layout first, then propose a direction.”
 git clone https://github.com/tekkov/qwen-studio.git
 cd qwen-studio
 npm install
-ollama pull qwen3.8:27b
+ollama pull qwen3:8b
+ollama pull qwen2.5:1.5b
 npm start
 ```
 
-The app starts a private loopback backend and opens the desktop UI. To use another compatible model, set `QWEN_MODEL` in your environment or copy `.env.example` to `.env`.
+The app starts a private loopback backend and opens the desktop UI. Fast mode uses `qwen2.5:1.5b`; Balanced and Deep use `qwen3:8b`. Set `QWEN_MODEL` or `QWEN_FAST_MODEL` to use other compatible models.
 
 ### Verify the checkout
 

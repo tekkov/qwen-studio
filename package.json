@@ -4,12 +4,16 @@
   "description": "A free, local-first Qwen coding agent desktop app powered by Ollama",
   "author": "Qwen Studio contributors",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tekkov/qwen-studio.git"
+  },
   "keywords": ["qwen", "ollama", "coding-agent", "mcp", "tauri"],
   "scripts": {
     "frontend:build": "node scripts/prepare_frontend.mjs",
     "start": "node scripts/run_native_tool.mjs tauri dev",
     "test": "python -m unittest discover -s tests -v",
-    "check": "python -m py_compile server.py && node --check bootstrap.js && node --check app.js && node --check tauri-bridge.js && node --check icons.js && npm test",
+    "check": "python -m py_compile server.py scripts/release_audit.py scripts/smoke_model.py && node --check bootstrap.js && node --check app.js && node --check tauri-bridge.js && node --check icons.js && node --check mcp-bridge.mjs && npm test",
     "check:native": "node scripts/run_native_tool.mjs cargo check --manifest-path src-tauri/Cargo.toml",
     "audit:release": "python scripts/release_audit.py",
     "smoke:model": "python scripts/smoke_model.py",

@@ -4,7 +4,7 @@ Run deterministic tests and syntax checks with `npm run check`. The suite covers
 
 Run `npm run check:native` for a Rust/Tauri compile check and `npm run dist` for the complete native bundle. Native installers are produced on their own target operating system; the CI matrix checks Windows, macOS, and Linux.
 
-Run `npm run audit:release` before publishing. It checks required release files, local README links, and source-tree credential patterns while excluding generated binaries and the ignored `.env`.
+Run `npm run audit:release` before publishing. It checks required release files, local README links, changelog coverage for the current package version, and source-tree credential patterns while excluding generated binaries and the ignored `.env`.
 
 Run the optional real-model tool test with Ollama running:
 

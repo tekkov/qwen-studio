@@ -1,12 +1,12 @@
 # Qwen Studio product audit
 
-Audit date: 2026-08-16; implementation status updated after the first remediation pass.
+Audit date: 2026-08-16; implementation status updated after the full acceptance audit.
 
 ## Remediation status
 
-The P0 foundation is now substantially stronger than the initial assessment below: projects can be created or linked; project-scoped threads persist and can be renamed or archived; image, text/code, and sampled-video attachments reach Ollama; Fast/Balanced/Deep profiles use detected runtime metadata and bounded context; the desktop backend uses a fresh port per launch; and deterministic API/storage tests plus real vision/tool-use tests pass. Public-repository basics now include MIT licensing, CI, contribution/security guidance, and focused documentation.
+The P0 foundation is now substantially stronger than the initial assessment below: projects can be created or linked; project-scoped threads persist and can be renamed or archived; image, text/code, and sampled-video attachments reach Ollama; Fast/Balanced/Deep profiles use detected runtime metadata and bounded context; the desktop backend uses a fresh port per launch; and deterministic API/storage tests plus real vision/tool-use tests pass. Public-repository basics now include MIT licensing, CI, contribution/security guidance, and focused documentation. The later acceptance audit also delivered the former 1.0 blockers: interactive permission profiles with approvals, persistent jobs with restart recovery, Markdown/code rendering with copy controls, a Git branch/status/diff/worktree review surface, Streamable HTTP MCP with redacted auth headers, and packaged accessibility checks (focus coverage, reduced-motion, narrow-viewport layout).
 
-Remaining blockers for a stable 1.0 are interactive permission/approval profiles, persistent jobs and restart recovery, Markdown/code rendering, a Git diff/review surface, richer MCP transports/auth, and packaged visual accessibility testing.
+Remaining work toward a stable 1.0 is now polish rather than foundation: smoother approval UX for external and destructive actions, signed and notarized release automation, more model/provider adapters, polished onboarding and first-run diagnostics, and the P2 browser/computer/remote-execution scope tracked in `development-planner.md`.
 
 ## Executive assessment
 

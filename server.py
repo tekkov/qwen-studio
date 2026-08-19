@@ -28,7 +28,8 @@ HOST, PORT = "127.0.0.1", int(os.getenv("QWEN_PORT", "8000"))
 API_TOKEN = os.getenv("QWEN_API_TOKEN", "")
 ALLOWED_ORIGINS = {"http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"}
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
-MODEL = os.getenv("QWEN_MODEL", "qwen3.8:27b")
+MODEL = os.getenv("QWEN_MODEL", "qwen3:8b")
+FAST_MODEL = os.getenv("QWEN_FAST_MODEL", "qwen2.5:1.5b")
 def user_data_dir():
     override = os.getenv("QWEN_DATA_DIR")
     if override: return Path(override)
@@ -93,7 +94,34 @@ SUPERVISOR_DEFAULTS = {
     "supervisorCadence": "milestones",
     "idleOnly": False,
     "busyProcesses": "",
+    "model": "",
+    "fastModel": "",
 }
+
+MODEL_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
+
+def clean_model_name(value):
+    name = str(value or "").strip()[:200]
+    return name if MODEL_NAME_PATTERN.fullmatch(name) else ""
+
+def effective_models():
+    settings = load_runtime_settings()
+    return {
+        "main": clean_model_name(settings.get("model")) or MODEL,
+        "fast": clean_model_name(settings.get("fastModel")) or FAST_MODEL,
+    }
+
+def installed_ollama_models():
+    try:
+        with urlopen(Request(f"{OLLAMA_URL}/api/tags"), timeout=3) as response:
+            details = json.loads(response.read())
+        models = []
+        for item in details.get("models", []):
+            name = str(item.get("name") or item.get("model") or "").strip()
+            if name: models.append(name)
+        return sorted(models), None
+    except Exception:
+        return [], "Ollama is not reachable yet."
 
 PROFILES = {
     "fast": {"label": "Fast", "num_ctx": 32768, "temperature": 0.2, "think": False},
@@ -107,14 +135,15 @@ def ollama_model_info():
     if MODEL_INFO_CACHE["value"] is not None and now - MODEL_INFO_CACHE["at"] < cache_seconds:
         return MODEL_INFO_CACHE["value"]
     value = {"available": False, "state": "offline", "message": "Ollama is not reachable yet.", "capabilities": [], "nativeContext": None}
+    checked_model = effective_models()["main"]
     try:
-        request = Request(f"{OLLAMA_URL}/api/show", data=json.dumps({"model": MODEL}).encode("utf-8"), headers={"Content-Type": "application/json"})
+        request = Request(f"{OLLAMA_URL}/api/show", data=json.dumps({"model": checked_model}).encode("utf-8"), headers={"Content-Type": "application/json"})
         with urlopen(request, timeout=3) as response: details = json.loads(response.read())
         model_info = details.get("model_info", {})
         context = next((number for key, number in model_info.items() if key.endswith(".context_length")), None)
         value = {"available": True, "state": "ready", "message": "Ollama and the selected model are ready.", "capabilities": details.get("capabilities", []), "nativeContext": context, "parameterSize": details.get("details", {}).get("parameter_size"), "quantization": details.get("details", {}).get("quantization_level")}
     except HTTPError as error:
-        if error.code in (400, 404): value.update({"state": "model-missing", "message": f"Model {MODEL} is not installed in Ollama."})
+        if error.code in (400, 404): value.update({"state": "model-missing", "message": f"Model {checked_model} is not installed in Ollama."})
     except Exception: pass
     MODEL_INFO_CACHE.update({"at": now, "value": value})
     return value
@@ -190,6 +219,8 @@ def load_runtime_settings():
     if settings.get("supervisorCadence") not in ("milestones", "failures", "continuous"): settings["supervisorCadence"] = "milestones"
     settings["idleOnly"] = bool(settings.get("idleOnly"))
     settings["busyProcesses"] = ",".join(item.strip().lower().replace(".exe", "") for item in str(settings.get("busyProcesses") or "").split(",") if item.strip())[:500]
+    settings["model"] = clean_model_name(settings.get("model"))
+    settings["fastModel"] = clean_model_name(settings.get("fastModel"))
     if settings.get("mode") not in ("milestones", "failures", "continuous"): settings["mode"] = "milestones"
     if settings.get("sandbox") not in ("read-only", "workspace-write"): settings["sandbox"] = "workspace-write"
     if settings.get("permissionProfile") not in ("read-only", "project-write", "full-access"): settings["permissionProfile"] = "project-write"
@@ -1170,6 +1201,7 @@ def run_agent_job(job_id, incoming):
         conversation = [{"role": "system", "content": SYSTEM + workspace_prompt}] + messages
         run_codex_supervisor(job, "kickoff", workspace, str(messages[-1].get("content", "")))
         profile = PROFILES.get(mode, PROFILES["fast"])
+        active_model = effective_models()["fast" if mode == "fast" else "main"]
         options = {"temperature": profile["temperature"], "num_ctx": profile["num_ctx"], "num_predict": load_runtime_settings().get("outputTokens", -1)}
         think = profile["think"]
         reported_omitted = 0
@@ -1184,9 +1216,9 @@ def run_agent_job(job_id, incoming):
             if omitted > reported_omitted:
                 add_job_event(job, "context", f"Kept the newest conversation turns and compacted {omitted} older message{'s' if omitted != 1 else ''} into a short memory handoff to keep Qwen responsive.", {"Profile": profile["label"], "Context limit": f"{profile['num_ctx']:,} tokens", "Older messages omitted": omitted, "Estimated context now": f"{job['metrics'].get('estimatedContextTokens', 0):,} tokens ({job['metrics'].get('contextUtilization', 0):.1f}%)"})
                 reported_omitted = omitted
-            add_job_event(job, "reasoning", "Sending the conversation and available tools to Qwen through Ollama. Waiting for Qwen to choose the next action.", {"Component": f"Ollama → {MODEL}", "Agent step": step + 1, "Mode": f"{profile['label']} — thinking {'enabled' if think else 'disabled'}", "Context limit": f"{profile['num_ctx']:,} tokens"})
+            add_job_event(job, "reasoning", "Sending the conversation and available tools to Qwen through Ollama. Waiting for Qwen to choose the next action.", {"Component": f"Ollama → {active_model}", "Agent step": step + 1, "Mode": f"{profile['label']} — thinking {'enabled' if think else 'disabled'}", "Context limit": f"{profile['num_ctx']:,} tokens"})
             update_job_activity(job, "model", "Ollama is loading the conversation into Qwen. This run has no automatic time limit.", agentStep=step + 1, unlimitedRun=True)
-            payload = {"model": MODEL, "messages": request_conversation, "tools": BUILT_IN_TOOLS + mcp_tools, "options": options, "think": think, "keep_alive": "30m"}
+            payload = {"model": active_model, "messages": request_conversation, "tools": BUILT_IN_TOOLS + mcp_tools, "options": options, "think": think, "keep_alive": "30m"}
             message, result = stream_ollama_chat(payload, job)
             step += 1
             record_model_step(job, result, profile, step)
@@ -1338,9 +1370,13 @@ class Handler(BaseHTTPRequestHandler):
             project = active_project()
             with JOBS_LOCK:
                 running = sum(1 for job in JOBS.values() if job.get("status") == "running")
-            self.send_json(200, {"model": MODEL, "workspace": str(project_workspace()), "project": project, "mcpCount": len(load_mcps()), "runningJobs": running, "runtime": ollama_model_info(), "profiles": PROFILES, "supervisor": supervisor_status()}); return
+            self.send_json(200, {"model": effective_models()["main"], "fastModel": effective_models()["fast"], "workspace": str(project_workspace()), "project": project, "mcpCount": len(load_mcps()), "runningJobs": running, "runtime": ollama_model_info(), "profiles": PROFILES, "supervisor": supervisor_status()}); return
         if route == "/api/supervisor":
             self.send_json(200, supervisor_status()); return
+        if route == "/api/models":
+            installed, error = installed_ollama_models()
+            selected = effective_models()
+            self.send_json(200, {"installed": installed, "selected": selected, "defaults": {"main": MODEL, "fast": FAST_MODEL}, "error": error}); return
         if route == "/api/jobs":
             with JOBS_LOCK:
                 jobs = [job_payload(job) for job in JOBS.values()]
@@ -1435,6 +1471,16 @@ class Handler(BaseHTTPRequestHandler):
                 for key in ("enabled", "mode", "sandbox", "maxRunsPerJob", "dailyBudgetUsd", "lowResource", "permissionProfile", "outputTokens", "processPriority", "supervisorCadence", "idleOnly", "busyProcesses"):
                     if key in incoming: settings[key] = incoming[key]
                 self.send_json(200, {"supervisor": save_runtime_settings(settings)} | {"status": supervisor_status()}); return
+            if route == "/api/models":
+                incoming = self.read_json(); settings = load_runtime_settings()
+                for key, incoming_key in (("model", "model"), ("fastModel", "fastModel")):
+                    if incoming_key not in incoming: continue
+                    cleaned = clean_model_name(incoming.get(incoming_key))
+                    if str(incoming.get(incoming_key) or "").strip() and not cleaned: self.send_json(400, {"error": "Model names may only contain letters, numbers, and . _ : / - characters."}); return
+                    settings[key] = cleaned
+                save_runtime_settings(settings)
+                MODEL_INFO_CACHE.update({"at": 0, "value": None})
+                self.send_json(200, {"selected": effective_models()}); return
             if route.startswith("/api/jobs/") and route.endswith("/approve"):
                 job_id = unquote(route.split("/")[3]); incoming = self.read_json()
                 decision = "approved" if incoming.get("approved") else "denied"
