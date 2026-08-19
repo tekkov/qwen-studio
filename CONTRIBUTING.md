@@ -5,7 +5,7 @@ Thank you for helping improve the local Qwen agent. Whether you found a bug, wro
 ## Development
 
 1. Install Python 3.11+, Node.js 20+, Ollama, and FFmpeg.
-2. Run `ollama pull qwen3.8:27b` or set `QWEN_MODEL` to a compatible tool/vision model.
+2. Run `ollama pull qwen3:8b` or set `QWEN_MODEL` to a compatible tool/vision model.
 3. Run `npm install` and `npm start`.
 4. Run `npm run check` before opening a pull request.
 

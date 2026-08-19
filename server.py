@@ -28,7 +28,8 @@ HOST, PORT = "127.0.0.1", int(os.getenv("QWEN_PORT", "8000"))
 API_TOKEN = os.getenv("QWEN_API_TOKEN", "")
 ALLOWED_ORIGINS = {"http://tauri.localhost", "https://tauri.localhost", "tauri://localhost"}
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434")
-MODEL = os.getenv("QWEN_MODEL", "qwen3.8:27b")
+MODEL = os.getenv("QWEN_MODEL", "qwen3:8b")
+FAST_MODEL = os.getenv("QWEN_FAST_MODEL", "qwen2.5:1.5b")
 def user_data_dir():
     override = os.getenv("QWEN_DATA_DIR")
     if override: return Path(override)
@@ -1170,6 +1171,7 @@ def run_agent_job(job_id, incoming):
         conversation = [{"role": "system", "content": SYSTEM + workspace_prompt}] + messages
         run_codex_supervisor(job, "kickoff", workspace, str(messages[-1].get("content", "")))
         profile = PROFILES.get(mode, PROFILES["fast"])
+        active_model = FAST_MODEL if mode == "fast" else MODEL
         options = {"temperature": profile["temperature"], "num_ctx": profile["num_ctx"], "num_predict": load_runtime_settings().get("outputTokens", -1)}
         think = profile["think"]
         reported_omitted = 0
@@ -1184,9 +1186,9 @@ def run_agent_job(job_id, incoming):
             if omitted > reported_omitted:
                 add_job_event(job, "context", f"Kept the newest conversation turns and compacted {omitted} older message{'s' if omitted != 1 else ''} into a short memory handoff to keep Qwen responsive.", {"Profile": profile["label"], "Context limit": f"{profile['num_ctx']:,} tokens", "Older messages omitted": omitted, "Estimated context now": f"{job['metrics'].get('estimatedContextTokens', 0):,} tokens ({job['metrics'].get('contextUtilization', 0):.1f}%)"})
                 reported_omitted = omitted
-            add_job_event(job, "reasoning", "Sending the conversation and available tools to Qwen through Ollama. Waiting for Qwen to choose the next action.", {"Component": f"Ollama → {MODEL}", "Agent step": step + 1, "Mode": f"{profile['label']} — thinking {'enabled' if think else 'disabled'}", "Context limit": f"{profile['num_ctx']:,} tokens"})
+            add_job_event(job, "reasoning", "Sending the conversation and available tools to Qwen through Ollama. Waiting for Qwen to choose the next action.", {"Component": f"Ollama → {active_model}", "Agent step": step + 1, "Mode": f"{profile['label']} — thinking {'enabled' if think else 'disabled'}", "Context limit": f"{profile['num_ctx']:,} tokens"})
             update_job_activity(job, "model", "Ollama is loading the conversation into Qwen. This run has no automatic time limit.", agentStep=step + 1, unlimitedRun=True)
-            payload = {"model": MODEL, "messages": request_conversation, "tools": BUILT_IN_TOOLS + mcp_tools, "options": options, "think": think, "keep_alive": "30m"}
+            payload = {"model": active_model, "messages": request_conversation, "tools": BUILT_IN_TOOLS + mcp_tools, "options": options, "think": think, "keep_alive": "30m"}
             message, result = stream_ollama_chat(payload, job)
             step += 1
             record_model_step(job, result, profile, step)
