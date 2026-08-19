@@ -1,5 +1,6 @@
 """Small, dependency-free release gate for the public repository."""
 from pathlib import Path
+import json
 import re
 import sys
 
@@ -40,6 +41,12 @@ def main():
                 errors.append(f"Broken README link: {target}")
     required = ["server.py", "index.html", "bootstrap.js", "app.js", "tauri-bridge.js", "scripts/run_native_tool.mjs", "src-tauri/tauri.conf.json", "mcp-bridge.mjs", "LICENSE", ".env.example"]
     errors.extend(f"Missing release file: {item}" for item in required if not (ROOT / item).exists())
+    version = json.loads((ROOT / "package.json").read_text(encoding="utf-8")).get("version", "")
+    changelog = ROOT / "CHANGELOG.md"
+    if not changelog.is_file():
+        errors.append("Missing release file: CHANGELOG.md")
+    elif version and not re.search(rf"^## {re.escape(version)}\b", changelog.read_text(encoding="utf-8", errors="replace"), re.MULTILINE):
+        errors.append(f"CHANGELOG.md has no entry for the current version {version}")
     if errors:
         print("Release audit failed:")
         print("\n".join(f"- {error}" for error in errors))
