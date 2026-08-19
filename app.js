@@ -64,12 +64,52 @@ async function loadStatus() {
     setConnected(state.runtimeReady, runtimeLabel, state.runtimeReady ? 'ready' : runtimeState === 'model-missing' ? 'offline' : 'starting');
     updateComposerAvailability();
     if (!state.runtimeReady && !loadStatus.runtimeNoticeShown) {
-      showNotice(runtimeState === 'model-missing' ? `${data.model} is not installed. Run “ollama pull ${data.model}” once, then Qwen Studio will connect automatically.` : `Starting Ollama for ${data.model}. The app will become ready automatically when the model is available.`, 'error');
+      showNotice(runtimeState === 'model-missing' ? `${data.model} is not installed. Pick an installed model in Settings, or run “ollama pull ${data.model}” once, then Qwen Studio will connect automatically.` : `Starting Ollama for ${data.model}. The app will become ready automatically when the model is available.`, 'error');
       loadStatus.runtimeNoticeShown = true;
     }
     if (state.runtimeReady) loadStatus.runtimeNoticeShown = false;
     refreshRecoveryJobs();
   } catch { state.runtimeReady = false; setConnected(false, 'Starting local backend…', 'starting'); updateComposerAvailability(); }
+}
+
+function fillModelSelect(select, installed, selected, fallback) {
+  if (!select) return;
+  select.textContent = '';
+  const names = [...new Set([...installed, selected, fallback].filter(Boolean))];
+  for (const name of names) {
+    const option = document.createElement('option');
+    option.value = name;
+    const installedHere = installed.includes(name);
+    option.textContent = installedHere ? name : name === fallback ? `${name} (environment default — not installed)` : `${name} (not installed)`;
+    select.append(option);
+  }
+  if (selected) select.value = selected;
+}
+
+async function loadModelPicker() {
+  const mainSelect = $('#model-select'); const fastSelect = $('#fast-model-select');
+  if (!mainSelect || !fastSelect) return;
+  try {
+    const data = await fetch('/api/models').then(r => r.json());
+    const installed = data.installed || [];
+    fillModelSelect(mainSelect, installed, data.selected?.main, data.defaults?.main);
+    fillModelSelect(fastSelect, installed, data.selected?.fast, data.defaults?.fast);
+    const unavailable = Boolean(data.error) && !installed.length;
+    mainSelect.disabled = unavailable; fastSelect.disabled = unavailable;
+  } catch { /* backend still starting; the next status pass will retry */ }
+}
+
+async function applyModelSelection(changes) {
+  try {
+    const response = await fetch('/api/models', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'The model selection could not be saved.');
+    showNotice(`Models updated: Balanced/Deep use ${result.selected.main}; Fast uses ${result.selected.fast}.`, 'success');
+    await loadStatus();
+  } catch (error) {
+    showNotice(error.message);
+    await loadModelPicker();
+  }
 }
 
 function ensureResourceControls() {
@@ -827,6 +867,8 @@ $('#supervisor-enabled').addEventListener('change', async event => { try { await
 $('#supervisor-mode').addEventListener('change', async event => { try { await setSupervisorSettings({ mode: event.currentTarget.value }); } catch (error) { $('#supervisor-status').textContent = error.message; } });
 $('#supervisor-budget').addEventListener('change', async event => { try { await setSupervisorSettings({ dailyBudgetUsd: Number(event.currentTarget.value) }); } catch (error) { $('#supervisor-status').textContent = error.message; } });
 $('#permission-profile').addEventListener('change', async event => { try { await setSupervisorSettings({ permissionProfile: event.currentTarget.value }); } catch (error) { $('#supervisor-status').textContent = error.message; } });
+$('#model-select')?.addEventListener('change', event => applyModelSelection({ model: event.currentTarget.value }));
+$('#fast-model-select')?.addEventListener('change', event => applyModelSelection({ fastModel: event.currentTarget.value }));
 $('#low-resource').addEventListener('change', async event => { try { await setSupervisorSettings({ lowResource: event.currentTarget.checked }); } catch (error) { event.currentTarget.checked = !event.currentTarget.checked; $('#supervisor-status').textContent = error.message; } });
 $('#output-tokens').addEventListener('change', async event => { try { const value = Number(event.currentTarget.value); if (!Number.isInteger(value) || value < -1) throw new Error('Use -1 for unlimited or a positive whole-number token cap.'); await setSupervisorSettings({ outputTokens: value }); } catch (error) { $('#supervisor-status').textContent = error.message; loadStatus(); } });
 $('#terminal-toggle').addEventListener('click', () => toggleTerminal());
@@ -864,5 +906,5 @@ document.addEventListener('keydown', event => {
   if (event.ctrlKey && event.key.toLowerCase() === 'k') { event.preventDefault(); newChat(); }
   if (event.ctrlKey && event.key === '`') { event.preventDefault(); toggleTerminal(); }
 });
-loadStatus().then(() => refreshThreads(true));
+loadStatus().then(() => { refreshThreads(true); loadModelPicker(); });
 setInterval(loadStatus, 5000);

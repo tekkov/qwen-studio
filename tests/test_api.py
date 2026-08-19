@@ -115,6 +115,21 @@ class ApiSmokeTests(unittest.TestCase):
         self.assertEqual(changed["supervisor"]["mode"], "failures")
         self.assertEqual(changed["supervisor"]["dailyBudgetUsd"], 1.5)
 
+    def test_model_selection_switches_the_active_models(self):
+        _, catalog = self.request("/api/models")
+        self.assertIn("defaults", catalog)
+        self.assertIn("selected", catalog)
+        _, changed = self.request("/api/models", "POST", {"model": "qwen3.8:7b", "fastModel": "qwen2.5:1.5b"})
+        self.assertEqual(changed["selected"], {"main": "qwen3.8:7b", "fast": "qwen2.5:1.5b"})
+        _, status = self.request("/api/status")
+        self.assertEqual(status["model"], "qwen3.8:7b")
+        self.assertEqual(status["fastModel"], "qwen2.5:1.5b")
+        _, after = self.request("/api/models")
+        self.assertEqual(after["selected"]["main"], "qwen3.8:7b")
+        with self.assertRaises(HTTPError) as failure:
+            self.request("/api/models", "POST", {"model": "bad name; rm -rf /"})
+        self.assertEqual(failure.exception.code, 400)
+
     def test_job_approval_endpoint_records_explicit_decision(self):
         job_id = "approval-smoke"
         server.JOBS_LOADED = True

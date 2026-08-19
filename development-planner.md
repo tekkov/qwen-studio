@@ -23,6 +23,7 @@
 # Completed Action Items
 
 ## Session 2026-08-18 (release documentation and gate parity)
+- Added in-app model switching: a Settings picker lists installed Ollama models, persists Balanced/Deep and Fast selections, overrides the `QWEN_MODEL`/`QWEN_FAST_MODEL` defaults, and validates names through new `/api/models` endpoints in `server.py`, `app.js`, and `index.html`.
 - Added missing `CHANGELOG.md` entries for 0.4.1, 0.4.2, and 0.4.3 from the tagged Git history, and made `scripts/release_audit.py` fail when the current package version has no changelog entry.
 - Added `mcp-bridge.mjs` and the release scripts to the `npm run check` syntax gates, the missing `repository` field to `package.json`, `OLLAMA_COMMAND` to `.env.example`, and refreshed the stale remediation status in `docs/product-audit.md`.
 - Verified `npm run check` with 34 tests, `npm run audit:release`, `npm run check:native`, live backend boot with token enforcement, and MCP client import resolution.
