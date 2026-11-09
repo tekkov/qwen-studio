@@ -57,7 +57,18 @@ ollama pull qwen3.8:27b
 npm start
 ```
 
-The app starts a private loopback backend and opens the desktop UI. To use another compatible model, set `QWEN_MODEL` in your environment or copy `.env.example` to `.env`.
+The app starts a private loopback backend and opens the desktop UI.
+
+#### Lighter model for 16-24GB machines 🪶
+
+[Qwen3.8-9B Distill](https://huggingface.co/empero-ai/Qwen3.8-9B-Distill-GGUF) (Empero, Apache 2.0) runs comfortably on 16-24GB Macs/PCs. Qwen Studio detects it automatically and applies its recommended sampling (`temperature 0.6`, `top_p 0.95`, `top_k 20`) with thinking reserved for Deep mode so Fast and Balanced reply quickly:
+
+```bash
+ollama pull hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K
+ollama cp hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q6_K qwen3.8-9b-distill:q6_k
+# then in .env
+QWEN_MODEL=qwen3.8-9b-distill:q6_k
+``` To use another compatible model, set `QWEN_MODEL` in your environment or copy `.env.example` to `.env`.
 
 ### Verify the checkout
 

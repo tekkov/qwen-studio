@@ -409,8 +409,8 @@ function addMessage(role, text, attachments = [], statusText = '') {
 function addRunStatus() {
   const card = document.createElement('section');
   card.className = 'run-status';
-  card.innerHTML = '<div class="run-status-head"><span class="run-spinner"></span><strong>Qwen is working</strong><span class="run-elapsed">0:00</span><span class="run-state">Starting</span><button class="run-pause" type="button">Pause</button><button class="run-stop" type="button">Stop</button></div><div class="run-live" role="status" aria-live="polite"><span class="live-pulse"></span><div><strong>Starting the local agent</strong><small>Preparing your request…</small></div></div><div class="run-approval" hidden><strong>Qwen needs your approval</strong><p></p><small></small><div><button class="approve" type="button">Approve once</button><button class="deny" type="button">Deny</button></div></div><pre class="run-draft" aria-label="Live response preview" hidden></pre><div class="run-events"></div>';
-  const artifacts = document.createElement('div'); artifacts.className = 'run-artifacts'; artifacts.hidden = true; card.querySelector('.run-events').before(artifacts);
+  card.innerHTML = '<div class="run-status-head"><span class="run-spinner"></span><strong>Qwen is working</strong><span class="run-elapsed">0:00</span><span class="run-state">Starting</span><button class="run-pause" type="button">Pause</button><button class="run-stop" type="button">Stop</button></div><div class="run-live" role="status" aria-live="polite"><span class="live-pulse"></span><div><strong>Starting the local agent</strong><small>Preparing your request…</small></div></div><div class="run-approval" hidden><strong>Qwen needs your approval</strong><p></p><small></small><div><button class="approve" type="button">Approve once</button><button class="deny" type="button">Deny</button></div></div><pre class="run-draft" aria-label="Live response preview" hidden></pre><details class="run-steps"><summary>Steps <span class="run-steps-count">0</span></summary><div class="run-events"></div></details>';
+  const artifacts = document.createElement('div'); artifacts.className = 'run-artifacts'; artifacts.hidden = true; card.querySelector('.run-steps').before(artifacts);
   messages.append(card);
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   return card;
@@ -498,14 +498,25 @@ async function respondToApproval(jobId, approved, panel) {
   }
 }
 
+function updateRunStepCount(card) {
+  const count = card.querySelector('.run-steps-count');
+  if (count) count.textContent = String(card.querySelectorAll('.run-events .run-event').length);
+}
+
 function appendRunEvent(card, event) {
+  const list = card.querySelector('.run-events');
+  const last = list.lastElementChild;
+  // Repeated "still waiting" notices update one line instead of stacking new cards.
+  if (event.kind === 'watchdog' && last?.dataset.kind === 'watchdog') {
+    last.querySelector('.run-event-title').textContent = event.text;
+    return;
+  }
   const item = document.createElement('div');
   item.className = `run-event ${event.kind}`;
-  const title = document.createElement('div');
-  title.className = 'run-event-title';
-  title.textContent = event.text;
-  item.append(title);
+  item.dataset.kind = event.kind;
   if (event.detail && Object.keys(event.detail).length) {
+    const more = document.createElement('details'); more.className = 'run-event-more';
+    const title = document.createElement('summary'); title.className = 'run-event-title'; title.textContent = event.text;
     const details = document.createElement('div'); details.className = 'run-event-detail';
     const fields = document.createElement('dl');
     Object.entries(event.detail).forEach(([label, value]) => {
@@ -517,10 +528,15 @@ function appendRunEvent(card, event) {
       fields.append(term, description);
     });
     details.append(fields);
-    item.append(details);
+    more.append(title, details);
+    item.append(more);
+  } else {
+    const title = document.createElement('div'); title.className = 'run-event-title'; title.textContent = event.text;
+    item.append(title);
   }
-  card.querySelector('.run-events').append(item);
-  item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  list.append(item);
+  updateRunStepCount(card);
+  if (card.querySelector('.run-steps')?.open) item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 async function watchJob(jobId, card) {
