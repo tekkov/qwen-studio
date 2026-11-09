@@ -72,3 +72,17 @@
 @keyframes run-spin { to { transform: rotate(360deg); } }
 @keyframes live-pulse { 70% { box-shadow: 0 0 0 7px rgba(37, 99, 235, 0); } 100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); } }
 @media (prefers-reduced-motion: reduce) { .run-spinner, .live-pulse { animation: none; } }
+
+/* Collapsible run log: live status stays visible, step history is opt-in. */
+.run-steps { border-top: 1px solid #ebebed; }
+.run-steps > summary { list-style: none; cursor: pointer; padding: 8px 13px; color: #74747a; font-size: 11px; user-select: none; }
+.run-steps > summary::-webkit-details-marker { display: none; }
+.run-steps > summary::before { content: "▸"; display: inline-block; width: 12px; color: #a0a0a6; transition: transform .15s; }
+.run-steps[open] > summary::before { transform: rotate(90deg); }
+.run-steps > summary:hover { color: #36363b; }
+.run-steps-count { display: inline-block; min-width: 16px; margin-left: 4px; padding: 0 5px; border-radius: 999px; background: #f0f0f3; color: #6b6b71; font-size: 10px; text-align: center; }
+.run-steps .run-events { border-top: 0; max-height: 360px; overflow: auto; }
+.run-event-more > summary { list-style: none; cursor: pointer; }
+.run-event-more > summary::-webkit-details-marker { display: none; }
+.run-event-more > summary::after { content: " · details"; color: #a8a8ae; font-size: 10px; }
+.run-event-more[open] > summary::after { content: " · hide"; }

@@ -101,6 +101,32 @@ PROFILES = {
     "deep": {"label": "Deep", "num_ctx": 131072, "temperature": 0.15, "think": True},
 }
 
+# Per-model tuning layered on top of PROFILES. The profiles above suit Qwen3.8-27B;
+# reasoning distills ship with their own recommended sampling and always think first.
+MODEL_TUNING = {
+    "qwen3.8-9b-distill": {
+        "label": "Qwen3.8-9B Distill (Empero)",
+        # Recommended by empero-ai/Qwen3.8-9B-Distill-GGUF model card.
+        "options": {"temperature": 0.6, "top_p": 0.95, "top_k": 20},
+        # Reasoning is opt-in: Fast/Balanced answer directly (think=False is honoured by Ollama),
+        # Deep keeps the full <think> pass. Always-on thinking made simple replies take minutes.
+    },
+}
+
+def model_tuning(model=None):
+    name = (model or MODEL).lower()
+    return next((tuning for key, tuning in MODEL_TUNING.items() if key in name), None)
+
+def profile_request_settings(profile, model=None, output_tokens=None):
+    if output_tokens is None: output_tokens = load_runtime_settings().get("outputTokens", -1)
+    options = {"temperature": profile["temperature"], "num_ctx": profile["num_ctx"], "num_predict": output_tokens}
+    think = profile["think"]
+    tuning = model_tuning(model)
+    if tuning:
+        options.update(tuning["options"])
+        think = tuning.get("think", think)
+    return options, think
+
 def ollama_model_info():
     now = time.time()
     cache_seconds = 60 if (MODEL_INFO_CACHE.get("value") or {}).get("available") else 3
@@ -844,10 +870,10 @@ def job_watchdog(job, workspace, stop_event):
         now = time.time()
         last_output = metrics.get("lastChunkAt") or updated
         stale = max(0, int(now - last_output))
-        if phase in ("model", "generating") and stale >= 20 and now - last_notice >= 20:
+        if phase in ("model", "generating") and stale >= 20 and now - last_notice >= max(20, stale / 2):
             last_notice = now
-            add_job_event(job, "watchdog", f"Qwen has produced no new model output for {stale} seconds. The run is still allowed to continue; the watchdog is checking whether it is processing or stalled.", {"Phase": phase, "Seconds since model output": stale, "Automatic timeout": "Disabled"})
-            update_job_activity(job, phase, f"Qwen is still processing; no new model output for {stale} seconds. The watchdog is observing, not terminating the run.", staleSeconds=stale)
+            add_job_event(job, "watchdog", f"Still waiting on Qwen — no new output for {stale}s. The run continues; nothing is being stopped.", {"Phase": phase, "Seconds since model output": stale, "Automatic timeout": "Disabled"})
+            update_job_activity(job, phase, f"Qwen is still working — no new output for {stale}s.", staleSeconds=stale)
             if stale >= 120 and job.get("supervisorEnabled") and not job.get("watchdogEscalated"):
                 with JOBS_LOCK: job["watchdogEscalated"] = True
                 run_codex_supervisor(job, "stall diagnosis", workspace, f"Qwen has produced no model output for {stale} seconds. Inspect the current project and determine whether the local worker is processing, blocked, or needs recovery. Do not claim completion without evidence.")
@@ -872,6 +898,7 @@ def stream_ollama_chat(payload, job):
     started = time.time()
     chunks = 0
     first_chunk_at = None
+    update_job_activity(job, "model", "Qwen is reading the request.", lastChunkAt=started)
     with urlopen(request) as response:
         with JOBS_LOCK: job["_response"] = response
         for raw_line in response:
@@ -889,8 +916,10 @@ def stream_ollama_chat(payload, job):
             if part.get("tool_calls"):
                 message["tool_calls"].extend(part["tool_calls"])
             chunks += 1
-            stage = "Qwen is drafting the next user-facing update." if message["content"] else "Qwen is deciding which files or tools are needed next."
-            update_job_activity(job, "generating", stage, streamChunks=chunks, generatedCharacters=len(message["content"]), responsePreview=message["content"][-1600:], elapsedSeconds=round(time.time() - started, 1), lastChunkAt=time.time())
+            if message["content"]: stage = "Qwen is drafting the next user-facing update."
+            elif message["thinking"]: stage = f"Qwen is thinking it through ({len(message['thinking']):,} characters of reasoning so far)."
+            else: stage = "Qwen is deciding which files or tools are needed next."
+            update_job_activity(job, "generating", stage, streamChunks=chunks, generatedCharacters=len(message["content"]), thinkingCharacters=len(message["thinking"]), responsePreview=message["content"][-1600:], elapsedSeconds=round(time.time() - started, 1), lastChunkAt=time.time())
             if chunk.get("done"):
                 final = chunk
     if job.get("cancelRequested"):
@@ -1170,8 +1199,7 @@ def run_agent_job(job_id, incoming):
         conversation = [{"role": "system", "content": SYSTEM + workspace_prompt}] + messages
         run_codex_supervisor(job, "kickoff", workspace, str(messages[-1].get("content", "")))
         profile = PROFILES.get(mode, PROFILES["fast"])
-        options = {"temperature": profile["temperature"], "num_ctx": profile["num_ctx"], "num_predict": load_runtime_settings().get("outputTokens", -1)}
-        think = profile["think"]
+        options, think = profile_request_settings(profile)
         reported_omitted = 0
         step = 0
         while True:
