@@ -10,7 +10,7 @@
     "start": "node scripts/run_native_tool.mjs tauri dev",
     "test": "python -m unittest discover -s tests -v",
     "check": "python -m py_compile server.py && node --check bootstrap.js && node --check app.js && node --check tauri-bridge.js && node --check icons.js && npm test",
-    "check:native": "node scripts/run_native_tool.mjs cargo check --manifest-path src-tauri/Cargo.toml",
+    "check:native": "npm run frontend:build && node scripts/run_native_tool.mjs cargo check --manifest-path src-tauri/Cargo.toml",
     "audit:release": "python scripts/release_audit.py",
     "smoke:model": "python scripts/smoke_model.py",
     "dist": "node scripts/run_native_tool.mjs tauri build"
