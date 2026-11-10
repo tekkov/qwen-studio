@@ -485,6 +485,27 @@ def compact_messages(messages, context_limit):
     else: selected = [summary] + selected
     return selected, omitted, {"compacted": True, "omitted": omitted, "summaryCharacters": len(summary["content"])}
 
+def normalize_chat_messages(messages, task_text=""):
+    """Shape a request for strict chat templates (Qwen3.5/3.6/3.8 family raise on violations).
+
+    - exactly one system message, at the start (compaction handoffs and harness notes are merged in)
+    - at least one user turn (compaction can trim the original request away; restore it)
+    - no leading tool results whose assistant tool_call was trimmed off
+    """
+    system_parts, rest = [], []
+    for item in messages:
+        if item.get("role") == "system":
+            if str(item.get("content") or "").strip(): system_parts.append(str(item["content"]))
+        else:
+            rest.append(item)
+    while rest and rest[0].get("role") == "tool":
+        rest.pop(0)
+    if not any(item.get("role") == "user" for item in rest):
+        task = re.sub(r"\s+", " ", str(task_text or "")).strip()[:2000]
+        anchor = f"Original request (restored after context compaction): {task}" if task else "Continue the current task from the memory above."
+        rest.insert(0, {"role": "user", "content": anchor})
+    return ([{"role": "system", "content": "\n\n".join(system_parts)}] if system_parts else []) + rest
+
 def load_attachment_state():
     with ATTACHMENTS_LOCK:
         try:
@@ -1197,6 +1218,7 @@ def run_agent_job(job_id, incoming):
         snapshot = project_context_snapshot(workspace)
         workspace_prompt = f"\n\nThe active project folder is: {workspace}. Resolve relative file paths and shell work inside this folder. Use the following real project snapshot as orientation, then inspect relevant files with tools before making project-specific claims.\n\n{snapshot}"
         conversation = [{"role": "system", "content": SYSTEM + workspace_prompt}] + messages
+        task_text = next((str(item.get("content", "")) for item in messages if item.get("role") == "user" and str(item.get("content", "")).strip()), "")
         run_codex_supervisor(job, "kickoff", workspace, str(messages[-1].get("content", "")))
         profile = PROFILES.get(mode, PROFILES["fast"])
         options, think = profile_request_settings(profile)
@@ -1214,7 +1236,7 @@ def run_agent_job(job_id, incoming):
                 reported_omitted = omitted
             add_job_event(job, "reasoning", "Sending the conversation and available tools to Qwen through Ollama. Waiting for Qwen to choose the next action.", {"Component": f"Ollama → {MODEL}", "Agent step": step + 1, "Mode": f"{profile['label']} — thinking {'enabled' if think else 'disabled'}", "Context limit": f"{profile['num_ctx']:,} tokens"})
             update_job_activity(job, "model", "Ollama is loading the conversation into Qwen. This run has no automatic time limit.", agentStep=step + 1, unlimitedRun=True)
-            payload = {"model": MODEL, "messages": request_conversation, "tools": BUILT_IN_TOOLS + mcp_tools, "options": options, "think": think, "keep_alive": "30m"}
+            payload = {"model": MODEL, "messages": normalize_chat_messages(request_conversation, task_text), "tools": BUILT_IN_TOOLS + mcp_tools, "options": options, "think": think, "keep_alive": "30m"}
             message, result = stream_ollama_chat(payload, job)
             step += 1
             record_model_step(job, result, profile, step)
